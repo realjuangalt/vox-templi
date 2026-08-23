@@ -1,0 +1,38 @@
+[Unit]
+Description=Vox Templi HDMI kiosk (cage + Chromium)
+After=vox-templi.service
+Wants=vox-templi.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+# Dedicated unprivileged user you create (video/audio/seat groups).
+User=kiosk
+Group=kiosk
+SupplementaryGroups=seat video render input audio
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UnsetEnvironment=TERM
+EnvironmentFile=-/etc/vox-templi/env
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=XDG_SESSION_TYPE=wayland
+Environment=WLR_RENDERER=pixman
+Environment=LIBGL_ALWAYS_SOFTWARE=1
+ExecStartPre=+-/usr/bin/mkdir -p /run/user/%U
+ExecStartPre=+-/usr/bin/chown kiosk:kiosk /run/user/%U
+ExecStartPre=+-/usr/bin/chmod 700 /run/user/%U
+ExecStart=/opt/vox-templi/wrappers/kiosk.sh
+Restart=on-failure
+RestartSec=5
+Nice=10
+CPUWeight=40
+CPUQuota=120%
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,41 +1,47 @@
 #!/usr/bin/env bash
+# Deploy to a remote host. Host is *required* — never hardcoded.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOST="${EM_DEPLOY_HOST:-your-node}"
-REMOTE="${EM_REMOTE_DIR:-/opt/embassy-monitor}"
+HOST="${VOX_DEPLOY_HOST:?set VOX_DEPLOY_HOST (ssh destination)}"
+REMOTE="${VOX_PREFIX:-/opt/vox-templi}"
+ENV_SRC="${VOX_ENV_FILE:-$ROOT/config.example.env}"
 
 echo "==> sync $HOST:$REMOTE"
-ssh -o BatchMode=yes "$HOST" "mkdir -p '$REMOTE' /var/lib/embassy-monitor /var/log/embassy-monitor"
+ssh -o BatchMode=yes "$HOST" "mkdir -p '$REMOTE' /var/lib/vox-templi /etc/vox-templi"
 rsync -a --delete \
-  --exclude 'var/' \
   --exclude '.git/' \
+  --exclude 'var/' \
+  --exclude '__pycache__/' \
   "$ROOT/" "$HOST:$REMOTE/"
 
-echo "==> install units"
+echo "==> units + env"
 ssh -o BatchMode=yes "$HOST" bash -s <<EOF
 set -euo pipefail
-install -m 644 $REMOTE/systemd/embassy-monitor.service /etc/systemd/system/embassy-monitor.service
-install -m 644 $REMOTE/systemd/embassy-oracle.service /etc/systemd/system/embassy-oracle.service
-install -m 644 $REMOTE/systemd/embassy-oracle.timer /etc/systemd/system/embassy-oracle.timer
-install -m 644 $REMOTE/systemd/embassy-kiosk.service /etc/systemd/system/embassy-kiosk.service
-chmod +x $REMOTE/scripts/*.sh $REMOTE/scripts/*.py
-usermod -aG seat,video,render,input,audio kiosk 2>/dev/null || true
+install -m 644 $REMOTE/systemd/vox-templi.service /etc/systemd/system/vox-templi.service
+install -m 644 $REMOTE/systemd/vox-oracle.service /etc/systemd/system/vox-oracle.service
+install -m 644 $REMOTE/systemd/vox-oracle.timer /etc/systemd/system/vox-oracle.timer
+install -m 644 $REMOTE/systemd/vox-kiosk.service /etc/systemd/system/vox-kiosk.service
+chmod +x $REMOTE/wrappers/*.sh $REMOTE/scripts/*.sh
+if [[ ! -f /etc/vox-templi/env ]]; then
+  install -m 600 $REMOTE/config.example.env /etc/vox-templi/env
+  echo "NOTE: edit /etc/vox-templi/env (cookie path)" >&2
+fi
+if [[ -n "${VOX_KIOSK_USER:-}" ]]; then
+  mkdir -p /etc/systemd/system/vox-kiosk.service.d
+  printf '[Service]\nUser=%s\nGroup=%s\n' "$VOX_KIOSK_USER" "$VOX_KIOSK_USER" \
+    > /etc/systemd/system/vox-kiosk.service.d/user.conf
+fi
 systemctl daemon-reload
-systemctl enable --now seatd.service
-systemctl enable --now embassy-monitor.service
-systemctl enable embassy-oracle.timer
-systemctl start embassy-oracle.timer
-# HDMI kiosk takes tty1; stop the old PoS kiosk so they don't fight
-systemctl disable --now proofofsound-kiosk.service 2>/dev/null || true
-systemctl enable embassy-kiosk.service
-systemctl stop getty@tty1.service || true
-systemctl restart embassy-kiosk.service
-systemctl start --no-block embassy-oracle.service || true
+systemctl disable --now embassy-monitor.service embassy-kiosk.service embassy-oracle.timer 2>/dev/null || true
+systemctl enable --now vox-templi.service
+systemctl enable vox-oracle.timer
+systemctl start vox-oracle.timer
+systemctl enable vox-kiosk.service
+systemctl restart vox-kiosk.service
+systemctl start --no-block vox-oracle.service || true
 sleep 2
-systemctl --no-pager --full status embassy-monitor.service | head -16
+systemctl --no-pager --full status vox-templi.service | head -16
 curl -sS -m 5 http://127.0.0.1:8090/healthz || true
 echo
-curl -sS -m 8 http://127.0.0.1:8090/api/status | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok', d.get('ok'), 'h', (d.get('chain') or {}).get('height'), 'mp', (d.get('mempool') or {}).get('tx'), 'oracle', (d.get('oracle') or {}).get('state'))"
 EOF
-
-echo "Done. HDMI should show the monitor. First UTXOracle pass can take 10–20 min."
+echo "Done. Edit /etc/vox-templi/env on the node if this is the first install."

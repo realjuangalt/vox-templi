@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
+# Chromium wrapper: flags for a low-power Wayland kiosk + ALSA.
 set -euo pipefail
-URL="${EM_KIOSK_URL:-http://127.0.0.1:8090/}"
-PROFILE="${EM_CHROMIUM_PROFILE:-/var/lib/embassy-monitor/chromium}"
-ALSA_DEV="${EM_ALSA_DEVICE:-plughw:0,0}"
 
-if command -v wlr-randr >/dev/null 2>&1; then
-  sleep 0.4
-  wlr-randr --output HDMI-A-1 --mode 1280x720@60 || wlr-randr --output HDMI-A-1 --mode 1280x720 || true
-  ( sleep 2; wlr-randr --output HDMI-A-1 --mode 1280x720@60 || true ) &
+URL="${VOX_KIOSK_URL:-http://127.0.0.1:8090/}"
+PROFILE="${VOX_CHROMIUM_PROFILE:-${HOME}/.local/share/vox-templi/chromium}"
+ALSA_DEV="${VOX_ALSA_DEVICE:-plughw:0,0}"
+BIN="${VOX_CHROMIUM:-$(command -v chromium || command -v chromium-browser)}"
+
+if command -v wlr-randr >/dev/null 2>&1 && [[ -n "${VOX_OUTPUT:-}" ]]; then
+  sleep 0.3
+  wlr-randr --output "$VOX_OUTPUT" --mode "${VOX_MODE:-1280x720}" || true
 fi
 
-export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-${XDG_RUNTIME_DIR}/em-no-pipewire}"
+export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-${XDG_RUNTIME_DIR}/vox-no-pipewire}"
 mkdir -p "$PIPEWIRE_RUNTIME_DIR"
 unset PULSE_SERVER || true
 
-exec nice -n -5 /usr/bin/chromium \
+exec nice -n -5 "$BIN" \
   --user-data-dir="$PROFILE" \
   --ozone-platform=wayland \
   --kiosk \

@@ -1,22 +1,20 @@
 # Architecture
 
 ```
-                   HDMI (1280×720)
-                         │
-                    cage (Wayland)
-                         │
-                    Chromium kiosk
-                         │  GET /
-                         │  GET /api/status  (8s)
-                         ▼
-              embassy-monitor :127.0.0.1:8090
-                    │              ▲
-                    │              │ oracle.json (hourly)
-                    ▼              │
-              bitcoind RPC    UTXOracle.py -rb
-              cookie auth     last 144 blocks
+ tty1 HDMI
+    cage  →  Chromium (Web Audio + canvas 2D, ~12 fps)
+                 │
+                 │  GET /  GET /api/status
+                 ▼
+         python -m vox_templi serve
+                    │
+         vox_templi.bitcoin.Bitcoin
+                    │
+               bitcoind cookie RPC
+
+ python -m vox_templi oracle  (timer)
+         wraps vendor/UTXOracle.py -rb
+         writes $STATE_DIR/oracle.json
 ```
 
-Sound is synthesized in the page (Web Audio). Kick/hats follow mempool fill; pitch follows fee; a new block is a hit plus an expanding ring in the oculus.
-
-Coffers lighting up = mempool pressure. Oculus brightness = time since last block. Rim labels = RPC snapshot.
+Wrappers keep third-party binaries behind a single script each (`wrappers/alsa.sh`, `chromium.sh`, `kiosk.sh`). The Python package never shells out to `bitcoin-cli`.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>OCULUS</title>
+<title>Vox Templi</title>
 <style>
   :root{
     --ink:#140e0a; --void:#1c1410; --bronze:#6e4a28; --terra:#b85c38;
@@ -39,7 +39,7 @@
     <div class="s" id="hash">—</div>
   </div>
   <div class="cell" id="n">
-    <div class="brand">OCULUS · VOX TEMPLI</div>
+    <div class="brand">VOX TEMPLI</div>
     <div id="clock" class="s">--:-- UTC</div>
   </div>
   <div class="cell" id="ne">
@@ -258,17 +258,31 @@ function tick(){
 async function unmute(){
   if(!actx){
     actx=new (window.AudioContext||window.webkitAudioContext)();
-    master=actx.createGain(); master.gain.value=0.7; master.connect(actx.destination);
+    master=actx.createGain();
+    master.gain.value=0.7;
+    master.connect(actx.destination);
     noiseBuf=noiseBuffer(actx);
   }
   await actx.resume();
-  muted=false; $('mute').textContent='SOUND ON · SPACE';
-  if(!timer) tick();
+  if(master){
+    const t=actx.currentTime;
+    master.gain.cancelScheduledValues(t);
+    master.gain.setValueAtTime(0.7, t);
+  }
+  muted=false;
+  $('mute').textContent='SOUND ON · SPACE';
+  if(timer){ clearTimeout(timer); timer=null; }
+  tick();
   fetch('/kiosk-log',{method:'POST',headers:{'Content-Type':'text/plain'},body:'audio on',keepalive:true});
 }
 function mute(){
-  muted=true; if(timer){clearTimeout(timer); timer=null;}
-  if(master) master.gain.setTargetAtTime(0.0001, actx.currentTime, 0.05);
+  muted=true;
+  if(timer){ clearTimeout(timer); timer=null; }
+  if(master && actx){
+    const t=actx.currentTime;
+    master.gain.cancelScheduledValues(t);
+    master.gain.setTargetAtTime(0.0001, t, 0.05);
+  }
   $('mute').textContent='SOUND OFF · SPACE';
 }
 addEventListener('keydown', e=>{

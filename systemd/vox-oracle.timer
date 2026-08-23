@@ -1,5 +1,5 @@
 [Unit]
-Description=Hourly UTXOracle scan from local bitcoind
+Description=Hourly Vox Templi UTXOracle scan
 
 [Timer]
 OnBootSec=12min

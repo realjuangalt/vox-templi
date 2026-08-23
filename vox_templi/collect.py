@@ -1,49 +1,44 @@
-#!/usr/bin/env python3
-"""Snapshot node + mempool + cached UTXOracle into one JSON blob."""
+"""Snapshot chain + mempool + cached oracle. Speaks only through Bitcoin wrapper."""
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
-from rpc import rpc, sat_vb
-
-ORACLE_PATH = Path(os.environ.get("EM_ORACLE_JSON", "/var/lib/embassy-monitor/oracle.json"))
-STATE_PATH = Path(os.environ.get("EM_STATE_JSON", "/var/lib/embassy-monitor/status.json"))
+from .bitcoin import Bitcoin
+from .config import Config
 
 
-def _fee(blocks: int) -> float | None:
+def _fee(btc: Bitcoin, blocks: int) -> float | None:
     try:
-        r = rpc("estimatesmartfee", blocks, timeout=8)
-        return sat_vb((r or {}).get("feerate"))
+        r = btc.call("estimatesmartfee", blocks, timeout=8)
+        return Bitcoin.sat_vb((r or {}).get("feerate"))
     except Exception:
         return None
 
 
-def _oracle() -> dict:
-    if not ORACLE_PATH.exists():
+def _oracle(path: Path) -> dict:
+    if not path.exists():
         return {"state": "warming", "usd": None, "note": "first on-chain scan not finished"}
     try:
-        return json.loads(ORACLE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
         return {"state": "error", "usd": None, "note": str(e)}
 
 
-def snapshot() -> dict:
-    chain = rpc("getblockchaininfo")
-    net = rpc("getnetworkinfo")
-    mem = rpc("getmempoolinfo")
-    mining = rpc("getmininginfo")
+def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
+    btc = btc or Bitcoin(cfg)
+    chain = btc.call("getblockchaininfo")
+    net = btc.call("getnetworkinfo")
+    mem = btc.call("getmempoolinfo")
+    mining = btc.call("getmininginfo")
     height = int(chain["blocks"])
-    header = rpc("getblockheader", chain["bestblockhash"])
+    header = btc.call("getblockheader", chain["bestblockhash"])
     now = int(time.time())
     block_age = max(0, now - int(header.get("time") or now))
-    next_halving = 210000 - (height % 210000)
     mem_bytes = int(mem.get("bytes") or 0)
     mem_tx = int(mem.get("size") or 0)
     mem_cap = int(mem.get("maxmempool") or 300_000_000) or 300_000_000
-    min_fee = sat_vb(mem.get("mempoolminfee"))
     return {
         "ok": True,
         "ts": now,
@@ -59,7 +54,7 @@ def snapshot() -> dict:
             "nethash_eh": round(float(mining.get("networkhashps") or 0) / 1e18, 2),
             "block_time": int(header.get("time") or 0),
             "block_age_s": block_age,
-            "next_halving_blocks": next_halving,
+            "next_halving_blocks": 210000 - (height % 210000),
         },
         "net": {
             "peers": int(net.get("connections") or 0),
@@ -72,17 +67,17 @@ def snapshot() -> dict:
             "mb": round(mem_bytes / 1e6, 2),
             "usage_mb": round(int(mem.get("usage") or 0) / 1e6, 1),
             "fill": min(1.0, mem_bytes / mem_cap),
-            "min_sat_vb": min_fee,
-            "fee_fast": _fee(1),
-            "fee_mid": _fee(3),
-            "fee_slow": _fee(6),
+            "min_sat_vb": Bitcoin.sat_vb(mem.get("mempoolminfee")),
+            "fee_fast": _fee(btc, 1),
+            "fee_mid": _fee(btc, 3),
+            "fee_slow": _fee(btc, 6),
         },
-        "oracle": _oracle(),
+        "oracle": _oracle(cfg.oracle_json),
     }
 
 
-def write_snapshot(data: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATE_PATH.with_suffix(".tmp")
+def write_snapshot(cfg: Config, data: dict) -> None:
+    cfg.status_json.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cfg.status_json.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(STATE_PATH)
+    tmp.replace(cfg.status_json)

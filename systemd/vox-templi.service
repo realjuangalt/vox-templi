@@ -1,0 +1,20 @@
+[Unit]
+Description=Vox Templi HTTP (local bitcoind snapshot)
+After=network-online.target
+# Start after your node if you have a unit by this name:
+# After=bitcoind.service
+# Wants=bitcoind.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/vox-templi/env
+Environment=PYTHONPATH=/opt/vox-templi
+WorkingDirectory=/opt/vox-templi
+ExecStart=/usr/bin/python3 -m vox_templi serve
+Restart=always
+RestartSec=3
+Nice=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target
