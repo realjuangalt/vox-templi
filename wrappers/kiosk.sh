@@ -8,7 +8,7 @@ source "$VOX_PREFIX/wrappers/alsa.sh"
 alsa_prepare
 
 URL="${VOX_KIOSK_URL:-http://127.0.0.1:8090/}"
-PROFILE="${VOX_CHROMIUM_PROFILE:-${VOX_STATE_DIR:-$HOME/.local/share/vox-templi}/chromium}"
+PROFILE="${VOX_CHROMIUM_PROFILE:-${HOME}/.local/share/vox-templi/chromium}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 mkdir -p "$PROFILE" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
