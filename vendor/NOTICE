@@ -1,0 +1,9 @@
+UTXOracle.py
+  Source: https://utxo.live/oracle/UTXOracle.py
+  Version vendored: 9.1 (RPC only)
+  This tree does not call utxo.live at runtime. The script talks only to
+  your bitcoind via JSON-RPC.
+
+  No license file ships with the upstream script. We vendor it for
+  local, offline use and parse its `central_price` result. If you
+  redistribute, check the author's terms on utxo.live.

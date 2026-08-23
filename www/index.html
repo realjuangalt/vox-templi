@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>OCULUS</title>
+<style>
+  :root{
+    --ink:#140e0a; --void:#1c1410; --bronze:#6e4a28; --terra:#b85c38;
+    --trav:#c4a574; --marble:#e6d3b3; --gold:#d4af37; --sky:#8fd4e0;
+    --rust:#e85d04; --patina:#3d6b5a; --mute:#8a7358;
+  }
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--marble);font:13px/1.25 "Courier New",ui-monospace,monospace;overflow:hidden;cursor:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;image-rendering:pixelated}
+  #hud{position:fixed;inset:0;z-index:2;pointer-events:none;
+    display:grid;grid-template:"nw n ne" auto "w c e" 1fr "sw s se" auto / 22% 1fr 22%;
+    padding:18px 22px; gap:8px 16px;
+    text-shadow:0 1px 0 #000c, 0 0 10px #d4af3733}
+  .cell{letter-spacing:.12em}
+  .k{font-size:9px;color:var(--trav);text-transform:uppercase;letter-spacing:.22em}
+  .v{font-size:22px;font-weight:700;color:var(--marble);margin-top:3px}
+  .s{font-size:11px;color:var(--mute);margin-top:2px;word-break:break-all}
+  #nw{grid-area:nw} #n{grid-area:n;text-align:center} #ne{grid-area:ne;text-align:right}
+  #w{grid-area:w;align-self:center} #c{grid-area:c} #e{grid-area:e;text-align:right;align-self:center}
+  #sw{grid-area:sw} #s{grid-area:s;text-align:center} #se{grid-area:se;text-align:right}
+  #n .brand{font-size:11px;letter-spacing:.28em;color:var(--gold)}
+  #price{font-size:42px;color:var(--gold);letter-spacing:.06em}
+  #plock{font-size:10px;letter-spacing:.2em;color:var(--patina)}
+  .ok{color:#8fd4a8} .warn{color:var(--terra)} .bad{color:var(--rust)}
+  #mute,#help{position:fixed;bottom:14px;z-index:3;font-size:10px;letter-spacing:.16em;color:var(--mute)}
+  #mute{left:22px} #help{right:22px}
+</style>
+</head>
+<body>
+<canvas id="viz"></canvas>
+<div id="hud">
+  <div class="cell" id="nw">
+    <div class="k">Height</div><div class="v" id="h">—</div>
+    <div class="s" id="hash">—</div>
+  </div>
+  <div class="cell" id="n">
+    <div class="brand">OCULUS · VOX TEMPLI</div>
+    <div id="clock" class="s">--:-- UTC</div>
+  </div>
+  <div class="cell" id="ne">
+    <div class="k">Last block</div><div class="v" id="age">—</div>
+    <div class="s" id="sync">—</div>
+  </div>
+  <div class="cell" id="w">
+    <div class="k">Mempool</div><div class="v" id="mp">—</div>
+    <div class="s" id="mpb">—</div>
+  </div>
+  <div id="c"></div>
+  <div class="cell" id="e">
+    <div class="k">Peers</div><div class="v" id="peers">—</div>
+    <div class="s" id="ver">—</div>
+  </div>
+  <div class="cell" id="sw">
+    <div class="k">Fee sat/vB</div><div class="v" id="fee">—</div>
+    <div class="s">slow · mid · fast</div>
+  </div>
+  <div class="cell" id="s">
+    <div id="plock">UTXORACLE · NODE ONLY</div>
+    <div id="price">$ —. —</div>
+    <div class="s" id="log">waiting for local bitcoind…</div>
+  </div>
+  <div class="cell" id="se">
+    <div class="k">Halving</div><div class="v" id="halv">—</div>
+    <div class="s" id="diff">—</div>
+  </div>
+</div>
+<div id="mute">SOUND OFF · SPACE</div>
+<div id="help">SPACE SOUND · LOOKING UP</div>
+<script>
+const $ = id => document.getElementById(id);
+let S = null, lastH = 0, lastTx = 0;
+let rot = 0, t0 = performance.now(), flash = 0, shaft = 0;
+const waves = [];
+
+const canvas = $('viz');
+const ctx = canvas.getContext('2d', {alpha:false});
+function resize(){
+  const w=innerWidth, h=innerHeight;
+  const iw=640, ih=Math.max(1, Math.round(640*h/Math.max(1,w)));
+  canvas.width=iw; canvas.height=ih;
+}
+addEventListener('resize', resize); resize();
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(hexA,hexB,t){
+  t=Math.max(0,Math.min(1,+t||0));
+  const pa=parseInt(String(hexA).slice(1),16), pb=parseInt(String(hexB).slice(1),16);
+  const r=lerp(pa>>16,(pb>>16)&255,t)|0;
+  const g=lerp((pa>>8)&255,(pb>>8)&255,t)|0;
+  const bl=lerp(pa&255,pb&255,t)|0;
+  return 'rgb('+r+','+g+','+bl+')';
+}
+function density(){
+  if(!S||!S.mempool) return 0.25;
+  return Math.min(1, (S.mempool.tx||0)/80000*0.7 + (S.mempool.fill||0)*0.5);
+}
+function feeN(){
+  const f=(S&&S.mempool&&S.mempool.fee_mid)||1;
+  return Math.min(1, Math.log2(f+1)/6);
+}
+function ageN(){
+  const a=(S&&S.chain&&S.chain.block_age_s)||0;
+  return Math.min(1, a/600);
+}
+
+function coffer(cx,cy,r0,r1,a0,a1, fill, stroke){
+  ctx.beginPath();
+  ctx.arc(cx,cy,r1,a0,a1);
+  ctx.arc(cx,cy,r0,a1,a0,true);
+  ctx.closePath();
+  ctx.fillStyle=fill; ctx.fill();
+  if(stroke){ ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.stroke(); }
+}
+
+function draw(){
+  if(!ctx) return;
+  const iw=canvas.width, ih=canvas.height;
+  if(!iw||!ih) return;
+  const cx=iw*0.5, cy=ih*0.48;
+  const R=Math.min(iw,ih)*0.42;
+  const now=performance.now();
+  const dt=(now-t0)/1000; t0=now;
+  rot += 0.08*dt;
+  flash *= Math.pow(0.12, dt);
+  shaft = (shaft + dt*0.15) % (Math.PI*2);
+  const d=density(), f=feeN(), ag=ageN();
+  const bronze = mix('#6e4a28','#e85d04', f);
+  const sky = mix('#3a5c66','#c8f4ff', 1-ag*0.55 + flash*0.5);
+
+  ctx.fillStyle='#140e0a'; ctx.fillRect(0,0,iw,ih);
+  /* soffit vignette */
+  const vg=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.35);
+  vg.addColorStop(0,'#2a2218'); vg.addColorStop(0.7,'#1a140f'); vg.addColorStop(1,'#0c0907');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,iw,ih);
+
+  const rings=6;
+  for(let ring=rings; ring>=1; ring--){
+    const r1=R*(0.22+ring/rings*0.78);
+    const r0=R*(0.22+(ring-1)/rings*0.78)+2;
+    const n=8+ring*4;
+    const lit = d * rings;
+    for(let i=0;i<n;i++){
+      const gap=0.012;
+      const a0=rot* (ring%2?1:-0.6) + i*(Math.PI*2/n)+gap;
+      const a1=rot* (ring%2?1:-0.6) + (i+1)*(Math.PI*2/n)-gap;
+      const filled = (rings-ring) < lit + (i/n)*d;
+      const light = 0.35 + 0.25*Math.cos(a0-shaft) + flash*0.4;
+      let col = filled ? mix(bronze, '#e6d3b3', Math.max(0,Math.min(1,light))) : mix('#2a1c14','#4a3828', 0.3+light*0.2);
+      if(flash>0.2 && ring<=2) col=mix(col,'#fff4cc', flash);
+      coffer(cx,cy,r0,r1,a0,a1,col,'#140e0a');
+    }
+  }
+
+  /* oculus — the sky */
+  const oR=R*(0.16+flash*0.04+(1-ag)*0.02);
+  ctx.beginPath(); ctx.arc(cx,cy,oR+4,0,Math.PI*2);
+  ctx.strokeStyle='#d4af37'; ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,oR,0,Math.PI*2);
+  ctx.fillStyle=sky; ctx.fill();
+  /* sun disc wandering in the oculus */
+  const sx=cx+Math.cos(shaft)*oR*0.28, sy=cy+Math.sin(shaft)*oR*0.18;
+  ctx.fillStyle=`rgba(255,244,200,${0.55+flash*0.4})`;
+  ctx.beginPath(); ctx.arc(sx,sy, oR*0.35*(1.1-ag*0.3), 0, Math.PI*2); ctx.fill();
+
+  /* light rays from oculus — the “waves” with meaning: block-age breath + mempool */
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<10;i++){
+    const a=shaft + i*(Math.PI*2/10);
+    const len=R*(0.25+d*0.25+Math.sin(now/700+i)*0.04);
+    ctx.strokeStyle=`rgba(143,212,224,${0.07+d*0.05+flash*0.15})`;
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*oR, cy+Math.sin(a)*oR);
+    ctx.lineTo(cx+Math.cos(a)*len, cy+Math.sin(a)*len);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  for(let i=waves.length-1;i>=0;i--){
+    const w=waves[i]; w.r+=w.spd; w.a*=0.96;
+    ctx.strokeStyle=`rgba(212,175,55,${Math.max(0,w.a)})`;
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(cx,cy,w.r,0,Math.PI*2); ctx.stroke();
+    if(w.a<0.05||w.r>R) waves.splice(i,1);
+  }
+
+  /* Sant’Elia force-lines — sparse, not decoration piled on */
+  ctx.strokeStyle='rgba(232,93,4,0.18)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(cx-R*1.1, cy+R*0.15); ctx.lineTo(cx+R*1.05, cy-R*0.55);
+  ctx.moveTo(cx-R*0.9, cy+R*0.7); ctx.lineTo(cx+R*0.4, cy-R*1.0);
+  ctx.stroke();
+}
+let lastDraw=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(ts-lastDraw<80) return;
+  lastDraw=ts;
+  try{ draw(); }catch(e){ console.error('draw', e); }
+}
+requestAnimationFrame(loop);
+
+/* ---------- web audio (unchanged engine) ---------- */
+let actx=null, master, noiseBuf, timer=null, step=0, muted=true;
+function noiseBuffer(ctx){
+  const n=ctx.createBuffer(1, ctx.sampleRate*0.2, ctx.sampleRate);
+  const d=n.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  return n;
+}
+function beep(ctx, type, f, dur, t, g){
+  const o=ctx.createOscillator(); const a=ctx.createGain();
+  o.type=type; o.frequency.value=f;
+  a.gain.setValueAtTime(g, t);
+  a.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(a); a.connect(master); o.start(t); o.stop(t+dur);
+}
+function hat(ctx, t, g){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf;
+  const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=6000;
+  const a=ctx.createGain(); a.gain.setValueAtTime(g, t); a.gain.exponentialRampToValueAtTime(0.0001, t+0.04);
+  s.connect(f); f.connect(a); a.connect(master); s.start(t); s.stop(t+0.05);
+}
+function kick(ctx, t, g){
+  const o=ctx.createOscillator(); const a=ctx.createGain();
+  o.type='sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(40, t+0.12);
+  a.gain.setValueAtTime(g, t); a.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+  o.connect(a); a.connect(master); o.start(t); o.stop(t+0.2);
+}
+function bpm(){ return 72 + Math.round(density()*18); }
+function tick(){
+  if(!actx || muted) return;
+  const t=actx.currentTime+0.05;
+  const s=step%16;
+  const d=density(), f=feeN();
+  if(s===0||s===8) kick(actx, t, 0.55+d*0.25);
+  if(s===4||s===12) hat(actx, t, 0.08+d*0.1);
+  if(d>0.35 && s%2) hat(actx, t, 0.04+d*0.08);
+  if(s===0||s===8){
+    const root=110*(1+f*0.5);
+    beep(actx,'sine', root, 0.35, t, 0.07);
+    beep(actx,'triangle', root*2, 0.5, t, 0.03);
+  }
+  if(f>0.25 && [0,3,6,10,14].includes(s) && Math.random()<0.45+d*0.4){
+    const scale=[0,3,5,7,10,12];
+    const n=scale[(s + Math.round(f*8))%scale.length];
+    beep(actx,'triangle', 220*Math.pow(2,n/12)*(0.9+f*0.2), 0.18, t, 0.05);
+  }
+  step++;
+  timer=setTimeout(tick, 60000/bpm()/4);
+}
+async function unmute(){
+  if(!actx){
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    master=actx.createGain(); master.gain.value=0.7; master.connect(actx.destination);
+    noiseBuf=noiseBuffer(actx);
+  }
+  await actx.resume();
+  muted=false; $('mute').textContent='SOUND ON · SPACE';
+  if(!timer) tick();
+  fetch('/kiosk-log',{method:'POST',headers:{'Content-Type':'text/plain'},body:'audio on',keepalive:true});
+}
+function mute(){
+  muted=true; if(timer){clearTimeout(timer); timer=null;}
+  if(master) master.gain.setTargetAtTime(0.0001, actx.currentTime, 0.05);
+  $('mute').textContent='SOUND OFF · SPACE';
+}
+addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); muted?unmute():mute(); }
+});
+setTimeout(()=>{ unmute().catch(()=>{}); }, 800);
+
+function fmtAge(s){
+  if(s<90) return s+'s';
+  if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
+  return Math.floor(s/3600)+'h';
+}
+function pick(obj, keys, fallback){
+  if(!obj) return fallback;
+  for(let i=0;i<keys.length;i++){
+    if(obj[keys[i]]!=null) return obj[keys[i]];
+  }
+  return fallback;
+}
+function render(j){
+  S=j||{};
+  const c = S.chain || {};
+  const n = S.net || {};
+  const m = S.mempool || {};
+  const o = S.oracle || {};
+  const age = Number(c["block_age_s"] != null ? c["block_age_s"] : 0);
+  const ibd = !!c["ibd"];
+  const halv = c["next_halving_blocks"] || 0;
+  const eh = c["nethash_eh"] || 0;
+  $('clock').textContent=new Date().toISOString().slice(11,16)+' UTC';
+  $('h').textContent=c.height!=null?c.height:'—';
+  $('hash').textContent=(c.hash||'').slice(0,20)+'…';
+  $('age').textContent=fmtAge(age);
+  $('sync').textContent=ibd?'IBD '+((c.progress||0)*100).toFixed(2)+'%':'SYNCED';
+  $('sync').className=ibd?'warn':'ok';
+  $('peers').textContent=n.peers!=null?n.peers:'—';
+  $('ver').textContent=(n.version||'').replace(/\//g,'');
+  $('mp').textContent=(m.tx||0).toLocaleString();
+  $('mpb').textContent=(m.mb||0)+' MB · '+Math.round((m.fill||0)*100)+'%';
+  $('fee').textContent=[m.fee_slow,m.fee_mid,m.fee_fast].map(x=>x==null?'—':Math.round(x)).join(' / ');
+  $('halv').textContent=Number(halv).toLocaleString();
+  $('diff').textContent=Number(eh)+' EH/s';
+  if(o.usd){
+    $('price').textContent='$ '+Number(o.usd).toLocaleString();
+    $('plock').textContent='UTXORACLE · '+(o.lock||'LOCK')+' · LAST 144 BLOCKS';
+    $('plock').className=o.lock==='STRONG'?'ok':'warn';
+  } else {
+    $('price').textContent='$ —. —';
+    $('plock').textContent='UTXORACLE · '+(o.state||'warming').toUpperCase();
+  }
+  if(c.height && lastH && c.height>lastH){
+    flash=1;
+    waves.push({r:40,a:0.85,spd:4.2});
+    $('log').textContent='block '+c.height+' · light through the oculus';
+  }
+  if(m.tx && lastTx && m.tx>lastTx+80){
+    waves.push({r:30,a:0.4,spd:2.4});
+  }
+  lastH=c.height||lastH; lastTx=m.tx||lastTx;
+  if(!j.ok){
+    $('log').textContent=j.note||'rpc error';
+  } else if(c.height){
+    const log=$('log').textContent||'';
+    if(!log || /waiting|poll failed|rpc error/i.test(log))
+      $('log').textContent='node live · height '+c.height+' · local rpc';
+  }
+}
+async function poll(){
+  try{
+    const r=await fetch('/api/status',{cache:'no-store'});
+    if(!r.ok) throw new Error('http '+r.status);
+    render(await r.json());
+  }catch(e){
+    $('log').textContent='rpc poll failed: '+(e && e.message ? e.message : e);
+  }
+}
+poll(); setInterval(poll, 8000);
+</script>
+</body>
+</html>

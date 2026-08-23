@@ -1,0 +1,17 @@
+[Unit]
+Description=UTXOracle on-chain price (last 144 blocks, this node only)
+After=bitcoind.service embassy-monitor.service
+
+[Service]
+Type=oneshot
+User=root
+Nice=19
+CPUWeight=20
+MemoryMax=400M
+TimeoutStartSec=2400
+Environment=EM_COOKIE=/home/bitcoin/.bitcoin/.cookie
+Environment=EM_ORACLE_JSON=/var/lib/embassy-monitor/oracle.json
+Environment=EM_ORACLE_LOG=/var/lib/embassy-monitor/oracle.log
+Environment=EM_ORACLE_CONFDIR=/var/lib/embassy-monitor/btcconf
+WorkingDirectory=/opt/embassy-monitor
+ExecStart=/usr/bin/python3 /opt/embassy-monitor/scripts/oracle.py

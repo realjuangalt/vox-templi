@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.html
+!www/index.html
+var/
+.DS_Store
+*~
+UTXOracle_*.html
+chromium/
+*.log

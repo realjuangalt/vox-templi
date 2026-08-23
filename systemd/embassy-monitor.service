@@ -1,0 +1,23 @@
+[Unit]
+Description=Embassy node monitor (local RPC + kiosk UI)
+After=bitcoind.service network-online.target
+Wants=bitcoind.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/embassy-monitor
+Environment=EM_WWW=/opt/embassy-monitor/www
+Environment=EM_HOST=127.0.0.1
+Environment=EM_PORT=8090
+Environment=EM_COOKIE=/home/bitcoin/.bitcoin/.cookie
+Environment=EM_ORACLE_JSON=/var/lib/embassy-monitor/oracle.json
+Environment=EM_STATE_JSON=/var/lib/embassy-monitor/status.json
+ExecStart=/usr/bin/python3 /opt/embassy-monitor/scripts/serve.py
+Restart=always
+RestartSec=3
+Nice=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target
