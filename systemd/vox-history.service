@@ -1,0 +1,14 @@
+[Unit]
+Description=Vox Templi daily UTXOracle history (one UTC day per run)
+After=vox-templi.service
+
+[Service]
+Type=oneshot
+Nice=19
+CPUWeight=20
+MemoryMax=400M
+TimeoutStartSec=2400
+EnvironmentFile=-/etc/vox-templi/env
+Environment=PYTHONPATH=/opt/vox-templi
+WorkingDirectory=/opt/vox-templi
+ExecStart=/usr/bin/python3 -m vox_templi history

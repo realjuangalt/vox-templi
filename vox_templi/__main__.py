@@ -24,12 +24,17 @@ def main(argv: list[str] | None = None) -> int:
 
         print(json.dumps(run(cfg)))
         return 0
+    if cmd == "history":
+        from .history import step
+
+        print(json.dumps(step(cfg)))
+        return 0
     if cmd == "status":
         from .collect import snapshot
 
         print(json.dumps(snapshot(cfg), indent=2))
         return 0
-    print("usage: python -m vox_templi [serve|oracle|status]", file=sys.stderr)
+    print("usage: python -m vox_templi [serve|oracle|history|status]", file=sys.stderr)
     return 2
 
 

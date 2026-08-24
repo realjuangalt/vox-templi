@@ -173,40 +173,6 @@ const Dome = {
   }
 };
 
-const Pillars = {
-  count: 12,
-  draw(cx, cy, R, iw, ih){
-    const inner = R * 1.06;
-    const outer = Math.min(Math.min(iw, ih) * 0.48, R * 1.38);
-    const cap = (outer - inner) * 0.22;
-    for(let i=0;i<this.count;i++){
-      const a = -Math.PI/2 + i * (Math.PI*2/this.count);
-      const c = Math.cos(a), s = Math.sin(a);
-      const t = Math.cos(a + Math.PI/2), u = Math.sin(a + Math.PI/2);
-      const half = R * 0.035;
-      const x0=cx+c*inner, y0=cy+s*inner;
-      const x1=cx+c*(outer-cap), y1=cy+s*(outer-cap);
-      const x2=cx+c*outer, y2=cy+s*outer;
-      ctx.fillStyle='#3a2a1c';
-      ctx.beginPath();
-      ctx.moveTo(x0+t*half, y0+u*half);
-      ctx.lineTo(x1+t*half*0.85, y1+u*half*0.85);
-      ctx.lineTo(x1-t*half*0.85, y1-u*half*0.85);
-      ctx.lineTo(x0-t*half, y0-u*half);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle='#5a4030';
-      ctx.beginPath();
-      ctx.moveTo(x1+t*half*1.25, y1+u*half*1.25);
-      ctx.lineTo(x2+t*half*1.4, y2+u*half*1.4);
-      ctx.lineTo(x2-t*half*1.4, y2-u*half*1.4);
-      ctx.lineTo(x1-t*half*1.25, y1-u*half*1.25);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle='#c4a574';
-      ctx.fillRect(x2-2, y2-2, 4, 4);
-    }
-  }
-};
-
 const BlockLight = {
   rings: [],
   spawn(){
@@ -230,6 +196,26 @@ const BlockLight = {
   }
 };
 
+const PriceScramble = {
+  computing: false,
+  usd: null,
+  set(o){
+    this.computing = !!(o && o.computing);
+    if(o && o.usd!=null) this.usd = o.usd;
+  },
+  tick(){
+    const el=$('price');
+    if(!el) return;
+    if(this.computing && this.usd==null){
+      let s='$ ';
+      for(let i=0;i<5;i++) s += '0123456789'[(Math.random()*10)|0];
+      el.textContent=s;
+      return;
+    }
+    if(this.usd!=null) el.textContent='$ '+Number(this.usd).toLocaleString();
+  }
+};
+
 function draw(){
   if(!ctx) return;
   const iw=canvas.width, ih=canvas.height;
@@ -245,7 +231,6 @@ function draw(){
   ctx.fillStyle=vg; ctx.fillRect(0,0,iw,ih);
   Dome.tick(dt);
   Dome.draw(cx, cy, R, d, f, ag);
-  Pillars.draw(cx, cy, R, iw, ih);
   BlockLight.draw(cx, cy, iw, ih);
 }
 let lastDraw=0;
@@ -253,7 +238,7 @@ function loop(ts){
   requestAnimationFrame(loop);
   if(ts-lastDraw<80) return;
   lastDraw=ts;
-  try{ draw(); }catch(e){ console.error('draw', e); }
+  try{ draw(); PriceScramble.tick(); }catch(e){ console.error('draw', e); }
 }
 requestAnimationFrame(loop);
 
@@ -376,13 +361,14 @@ function render(j){
   $('fee').textContent=[m.fee_slow,m.fee_mid,m.fee_fast].map(x=>x==null?'—':Math.round(x)).join(' / ');
   $('halv').textContent=Number(halv).toLocaleString();
   $('diff').textContent=Number(eh)+' EH/s';
+  PriceScramble.set(o);
   if(o.usd){
-    $('price').textContent='$ '+Number(o.usd).toLocaleString();
-    $('plock').textContent='UTXORACLE · '+(o.lock||'LOCK')+' · LAST 144 BLOCKS';
-    $('plock').className=o.lock==='STRONG'?'ok':'warn';
-    $('oraerr').textContent='';
+    $('plock').textContent=(o.source==='daily-history')
+      ? ('ON-CHAIN DAILY · '+ (o.as_of_date||'') +' · BEYOND LAST 144')
+      : ('UTXORACLE · LAST 144 BLOCKS'+(o.computing?' · HISTORY FILLING':''));
+    $('plock').className='ok';
+    $('oraerr').textContent=o.computing ? ('computing '+ (o.computing_date||'')) : (o.note||'');
   } else {
-    $('price').textContent='$ —. —';
     const st=(o.state||'warming').toUpperCase();
     const kind=o.kind ? ' · '+String(o.kind).toUpperCase() : '';
     $('plock').textContent='UTXORACLE · '+st+kind;

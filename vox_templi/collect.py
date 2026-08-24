@@ -36,6 +36,37 @@ def _oracle(path: Path) -> dict:
     return data
 
 
+def _feed(cfg: Config) -> dict:
+    live = _oracle(cfg.oracle_json)
+    hist: dict = {"points": []}
+    if cfg.history_json.is_file():
+        try:
+            hist = json.loads(cfg.history_json.read_text(encoding="utf-8"))
+        except Exception:
+            hist = {"points": []}
+    pts = hist.get("points") or []
+    newest = max(pts, key=lambda p: p.get("d") or "") if pts else None
+    computing = bool(hist.get("computing") or live.get("computing"))
+    if newest and newest.get("usd"):
+        return {
+            "state": "ok",
+            "usd": newest["usd"],
+            "kind": "history",
+            "source": "daily-history",
+            "as_of_date": newest.get("d"),
+            "n": len(pts),
+            "computing": computing,
+            "computing_date": hist.get("computing_date"),
+            "note": "on-chain daily history · beyond last 144 blocks",
+        }
+    live = dict(live)
+    live["source"] = "last-144"
+    live["computing"] = computing or bool(live.get("computing"))
+    if live.get("usd"):
+        live["note"] = "last 144 blocks · daily history filling"
+    return live
+
+
 def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     btc = btc or Bitcoin(cfg)
     chain = btc.call("getblockchaininfo")
@@ -82,7 +113,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "fee_mid": _fee(btc, 3),
             "fee_slow": _fee(btc, 6),
         },
-        "oracle": _oracle(cfg.oracle_json),
+        "oracle": _feed(cfg),
     }
     ora = out["oracle"]
     log.emit(

@@ -72,3 +72,7 @@ class Config:
     @property
     def bitcoin_conf_stub(self) -> Path:
         return self.state_dir / "btcconf" / "bitcoin.conf"
+
+    @property
+    def history_json(self) -> Path:
+        return self.state_dir / "history.json"

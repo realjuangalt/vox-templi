@@ -1,0 +1,11 @@
+[Unit]
+Description=Fill one day of on-chain price history
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=20min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

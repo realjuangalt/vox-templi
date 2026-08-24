@@ -62,6 +62,8 @@ VOX_DEPLOY_HOST=your-node ./scripts/deploy.sh
 
 **Space** toggles sound.
 
+Daily history (`python -m vox_templi history`) fills one UTC day per timer tick into a compact JSON list. The HUD shows the newest stored day and labels it as **beyond the last 144 blocks**. While the first point is still computing, the price glyphs scramble in-place.
+
 ## Logging
 
 JSON lines at `$VOX_STATE_DIR/vox.log` (default `/var/lib/vox-templi/vox.log`). RPC in/out, snapshots, oracle runs.

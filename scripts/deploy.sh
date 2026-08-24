@@ -21,6 +21,8 @@ install -m 644 $REMOTE/systemd/vox-templi.service /etc/systemd/system/vox-templi
 install -m 644 $REMOTE/systemd/vox-oracle.service /etc/systemd/system/vox-oracle.service
 install -m 644 $REMOTE/systemd/vox-oracle.timer /etc/systemd/system/vox-oracle.timer
 install -m 644 $REMOTE/systemd/vox-kiosk.service /etc/systemd/system/vox-kiosk.service
+install -m 644 $REMOTE/systemd/vox-history.service /etc/systemd/system/vox-history.service
+install -m 644 $REMOTE/systemd/vox-history.timer /etc/systemd/system/vox-history.timer
 chmod +x $REMOTE/wrappers/*.sh $REMOTE/scripts/*.sh
 if [[ ! -f /etc/vox-templi/env ]]; then
   install -m 600 $REMOTE/config.example.env /etc/vox-templi/env
@@ -36,6 +38,9 @@ systemctl disable --now embassy-monitor.service embassy-kiosk.service embassy-or
 systemctl enable --now vox-templi.service
 systemctl enable vox-oracle.timer
 systemctl start vox-oracle.timer
+systemctl enable vox-history.timer
+systemctl start vox-history.timer
+systemctl start --no-block vox-history.service || true
 systemctl enable vox-kiosk.service
 systemctl restart vox-kiosk.service
 systemctl start --no-block vox-oracle.service || true
