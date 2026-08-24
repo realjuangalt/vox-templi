@@ -25,9 +25,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(run(cfg)))
         return 0
     if cmd == "history":
-        from .history import step
+        from .history import export_bundle, fill, step
 
-        print(json.dumps(step(cfg)))
+        if "--fill" in argv:
+            print(json.dumps(fill(cfg)))
+        elif "--export" in argv:
+            print(export_bundle(cfg))
+        else:
+            print(json.dumps(step(cfg)))
         return 0
     if cmd == "status":
         from .collect import snapshot

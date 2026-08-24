@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "algo": "UTXOracle-9.1",
+  "earliest": "2023-12-15",
+  "note": "Deterministic daily USD from settled chain. Same date ⇒ same price on every node.",
+  "points": []
+}

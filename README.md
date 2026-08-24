@@ -62,7 +62,13 @@ VOX_DEPLOY_HOST=your-node ./scripts/deploy.sh
 
 **Space** toggles sound.
 
-Daily history (`python -m vox_templi history`) fills one UTC day per timer tick into a compact JSON list. The HUD shows the newest stored day and labels it as **beyond the last 144 blocks**. While the first point is still computing, the price glyphs scramble in-place.
+Daily prices live in [`data/utxoracle-daily.json`](data/utxoracle-daily.json). Same UTC day ⇒ same integer USD on every node (UTXOracle 9.1 on settled blocks). The node **does not recompute** dates already in that file; it only appends newer days.
+
+```bash
+python3 -m vox_templi history         # one missing day
+python3 -m vox_templi history --fill   # backfill until yesterday
+python3 -m vox_templi history --export  # rewrite the bundled JSON
+```
 
 ## Logging
 
