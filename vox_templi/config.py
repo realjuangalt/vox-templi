@@ -29,6 +29,9 @@ class Config:
     alsa_device: str
     kiosk_url: str
     chromium_profile: Path
+    log_path: Path
+    log_max_bytes: int
+    log_forever: bool
 
     @classmethod
     def load(cls) -> Config:
@@ -49,6 +52,9 @@ class Config:
             alsa_device=os.environ.get("VOX_ALSA_DEVICE", "plughw:0,0"),
             kiosk_url=os.environ.get("VOX_KIOSK_URL", f"http://{bind}:{port}/"),
             chromium_profile=_path("VOX_CHROMIUM_PROFILE", state / "chromium"),
+            log_path=_path("VOX_LOG_PATH", state / "vox.log"),
+            log_max_bytes=int(os.environ.get("VOX_LOG_MAX_BYTES", str(2 * 1024 * 1024))),
+            log_forever=os.environ.get("VOX_LOG_FOREVER", "0") in ("1", "true", "yes"),
         )
 
     @property

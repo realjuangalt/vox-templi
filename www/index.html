@@ -62,6 +62,7 @@
   <div class="cell" id="s">
     <div id="plock">UTXORACLE · NODE ONLY</div>
     <div id="price">$ —. —</div>
+    <div class="s" id="oraerr"></div>
     <div class="s" id="log">waiting for local bitcoind…</div>
   </div>
   <div class="cell" id="se">
@@ -117,85 +118,135 @@ function coffer(cx,cy,r0,r1,a0,a1, fill, stroke){
   if(stroke){ ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.stroke(); }
 }
 
+/* Isolated viz layers — no shared mutable state except canvas + S */
+const Dome = {
+  rot: 0,
+  flash: 0,
+  shaft: 0,
+  tick(dt){
+    this.rot += 0.08*dt;
+    this.flash *= Math.pow(0.12, dt);
+    this.shaft = (this.shaft + dt*0.15) % (Math.PI*2);
+  },
+  pulse(){ this.flash = 1; },
+  draw(cx, cy, R, d, f, ag){
+    const bronze = mix('#6e4a28','#e85d04', f);
+    const sky = mix('#3a5c66','#c8f4ff', 1-ag*0.55 + this.flash*0.5);
+    const rings=6;
+    for(let ring=rings; ring>=1; ring--){
+      const r1=R*(0.22+ring/rings*0.78);
+      const r0=R*(0.22+(ring-1)/rings*0.78)+2;
+      const n=8+ring*4;
+      const lit = d * rings;
+      for(let i=0;i<n;i++){
+        const gap=0.012;
+        const a0=this.rot*(ring%2?1:-0.6) + i*(Math.PI*2/n)+gap;
+        const a1=this.rot*(ring%2?1:-0.6) + (i+1)*(Math.PI*2/n)-gap;
+        const filled = (rings-ring) < lit + (i/n)*d;
+        const light = 0.35 + 0.25*Math.cos(a0-this.shaft) + this.flash*0.4;
+        let col = filled ? mix(bronze, '#e6d3b3', Math.max(0,Math.min(1,light))) : mix('#2a1c14','#4a3828', 0.3+light*0.2);
+        if(this.flash>0.2 && ring<=2) col=mix(col,'#fff4cc', this.flash);
+        coffer(cx,cy,r0,r1,a0,a1,col,'#140e0a');
+      }
+    }
+    const oR=R*(0.16+this.flash*0.04+(1-ag)*0.02);
+    ctx.beginPath(); ctx.arc(cx,cy,oR+4,0,Math.PI*2);
+    ctx.strokeStyle='#d4af37'; ctx.lineWidth=3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy,oR,0,Math.PI*2);
+    ctx.fillStyle=sky; ctx.fill();
+    const sx=cx+Math.cos(this.shaft)*oR*0.28, sy=cy+Math.sin(this.shaft)*oR*0.18;
+    ctx.fillStyle=`rgba(255,244,200,${0.55+this.flash*0.4})`;
+    ctx.beginPath(); ctx.arc(sx,sy, oR*0.35*(1.1-ag*0.3), 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(let i=0;i<10;i++){
+      const a=this.shaft + i*(Math.PI*2/10);
+      const len=R*(0.25+d*0.25+Math.sin(performance.now()/700+i)*0.04);
+      ctx.strokeStyle=`rgba(143,212,224,${0.07+d*0.05+this.flash*0.15})`;
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*oR, cy+Math.sin(a)*oR);
+      ctx.lineTo(cx+Math.cos(a)*len, cy+Math.sin(a)*len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+};
+
+const Pillars = {
+  count: 12,
+  draw(cx, cy, R, iw, ih){
+    const inner = R * 1.06;
+    const outer = Math.min(Math.min(iw, ih) * 0.48, R * 1.38);
+    const cap = (outer - inner) * 0.22;
+    for(let i=0;i<this.count;i++){
+      const a = -Math.PI/2 + i * (Math.PI*2/this.count);
+      const c = Math.cos(a), s = Math.sin(a);
+      const t = Math.cos(a + Math.PI/2), u = Math.sin(a + Math.PI/2);
+      const half = R * 0.035;
+      const x0=cx+c*inner, y0=cy+s*inner;
+      const x1=cx+c*(outer-cap), y1=cy+s*(outer-cap);
+      const x2=cx+c*outer, y2=cy+s*outer;
+      ctx.fillStyle='#3a2a1c';
+      ctx.beginPath();
+      ctx.moveTo(x0+t*half, y0+u*half);
+      ctx.lineTo(x1+t*half*0.85, y1+u*half*0.85);
+      ctx.lineTo(x1-t*half*0.85, y1-u*half*0.85);
+      ctx.lineTo(x0-t*half, y0-u*half);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#5a4030';
+      ctx.beginPath();
+      ctx.moveTo(x1+t*half*1.25, y1+u*half*1.25);
+      ctx.lineTo(x2+t*half*1.4, y2+u*half*1.4);
+      ctx.lineTo(x2-t*half*1.4, y2-u*half*1.4);
+      ctx.lineTo(x1-t*half*1.25, y1-u*half*1.25);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#c4a574';
+      ctx.fillRect(x2-2, y2-2, 4, 4);
+    }
+  }
+};
+
+const BlockLight = {
+  rings: [],
+  spawn(){
+    this.rings.push({r:12, a:0.9, spd:4.5});
+  },
+  draw(cx, cy, iw, ih){
+    const fadeAt = Math.hypot(iw, ih) * 0.55;
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(let i=this.rings.length-1;i>=0;i--){
+      const w=this.rings[i];
+      w.r += w.spd;
+      w.a *= 0.988;
+      const fade = 1 - Math.min(1, w.r / fadeAt);
+      ctx.strokeStyle=`rgba(255,230,160,${Math.max(0, w.a*fade)})`;
+      ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,w.r,0,Math.PI*2); ctx.stroke();
+      if(w.a<0.03 || w.r>fadeAt) this.rings.splice(i,1);
+    }
+    ctx.restore();
+  }
+};
+
 function draw(){
   if(!ctx) return;
   const iw=canvas.width, ih=canvas.height;
   if(!iw||!ih) return;
   const cx=iw*0.5, cy=ih*0.48;
-  const R=Math.min(iw,ih)*0.42;
+  const R=Math.min(iw,ih)*0.38;
   const now=performance.now();
   const dt=(now-t0)/1000; t0=now;
-  rot += 0.08*dt;
-  flash *= Math.pow(0.12, dt);
-  shaft = (shaft + dt*0.15) % (Math.PI*2);
   const d=density(), f=feeN(), ag=ageN();
-  const bronze = mix('#6e4a28','#e85d04', f);
-  const sky = mix('#3a5c66','#c8f4ff', 1-ag*0.55 + flash*0.5);
-
   ctx.fillStyle='#140e0a'; ctx.fillRect(0,0,iw,ih);
-  /* soffit vignette */
-  const vg=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.35);
+  const vg=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.55);
   vg.addColorStop(0,'#2a2218'); vg.addColorStop(0.7,'#1a140f'); vg.addColorStop(1,'#0c0907');
   ctx.fillStyle=vg; ctx.fillRect(0,0,iw,ih);
-
-  const rings=6;
-  for(let ring=rings; ring>=1; ring--){
-    const r1=R*(0.22+ring/rings*0.78);
-    const r0=R*(0.22+(ring-1)/rings*0.78)+2;
-    const n=8+ring*4;
-    const lit = d * rings;
-    for(let i=0;i<n;i++){
-      const gap=0.012;
-      const a0=rot* (ring%2?1:-0.6) + i*(Math.PI*2/n)+gap;
-      const a1=rot* (ring%2?1:-0.6) + (i+1)*(Math.PI*2/n)-gap;
-      const filled = (rings-ring) < lit + (i/n)*d;
-      const light = 0.35 + 0.25*Math.cos(a0-shaft) + flash*0.4;
-      let col = filled ? mix(bronze, '#e6d3b3', Math.max(0,Math.min(1,light))) : mix('#2a1c14','#4a3828', 0.3+light*0.2);
-      if(flash>0.2 && ring<=2) col=mix(col,'#fff4cc', flash);
-      coffer(cx,cy,r0,r1,a0,a1,col,'#140e0a');
-    }
-  }
-
-  /* oculus — the sky */
-  const oR=R*(0.16+flash*0.04+(1-ag)*0.02);
-  ctx.beginPath(); ctx.arc(cx,cy,oR+4,0,Math.PI*2);
-  ctx.strokeStyle='#d4af37'; ctx.lineWidth=3; ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx,cy,oR,0,Math.PI*2);
-  ctx.fillStyle=sky; ctx.fill();
-  /* sun disc wandering in the oculus */
-  const sx=cx+Math.cos(shaft)*oR*0.28, sy=cy+Math.sin(shaft)*oR*0.18;
-  ctx.fillStyle=`rgba(255,244,200,${0.55+flash*0.4})`;
-  ctx.beginPath(); ctx.arc(sx,sy, oR*0.35*(1.1-ag*0.3), 0, Math.PI*2); ctx.fill();
-
-  /* light rays from oculus — the “waves” with meaning: block-age breath + mempool */
-  ctx.save();
-  ctx.globalCompositeOperation='lighter';
-  for(let i=0;i<10;i++){
-    const a=shaft + i*(Math.PI*2/10);
-    const len=R*(0.25+d*0.25+Math.sin(now/700+i)*0.04);
-    ctx.strokeStyle=`rgba(143,212,224,${0.07+d*0.05+flash*0.15})`;
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(cx+Math.cos(a)*oR, cy+Math.sin(a)*oR);
-    ctx.lineTo(cx+Math.cos(a)*len, cy+Math.sin(a)*len);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  for(let i=waves.length-1;i>=0;i--){
-    const w=waves[i]; w.r+=w.spd; w.a*=0.96;
-    ctx.strokeStyle=`rgba(212,175,55,${Math.max(0,w.a)})`;
-    ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(cx,cy,w.r,0,Math.PI*2); ctx.stroke();
-    if(w.a<0.05||w.r>R) waves.splice(i,1);
-  }
-
-  /* Sant’Elia force-lines — sparse, not decoration piled on */
-  ctx.strokeStyle='rgba(232,93,4,0.18)'; ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.moveTo(cx-R*1.1, cy+R*0.15); ctx.lineTo(cx+R*1.05, cy-R*0.55);
-  ctx.moveTo(cx-R*0.9, cy+R*0.7); ctx.lineTo(cx+R*0.4, cy-R*1.0);
-  ctx.stroke();
+  Dome.tick(dt);
+  Dome.draw(cx, cy, R, d, f, ag);
+  Pillars.draw(cx, cy, R, iw, ih);
+  BlockLight.draw(cx, cy, iw, ih);
 }
 let lastDraw=0;
 function loop(ts){
@@ -329,17 +380,19 @@ function render(j){
     $('price').textContent='$ '+Number(o.usd).toLocaleString();
     $('plock').textContent='UTXORACLE · '+(o.lock||'LOCK')+' · LAST 144 BLOCKS';
     $('plock').className=o.lock==='STRONG'?'ok':'warn';
+    $('oraerr').textContent='';
   } else {
     $('price').textContent='$ —. —';
-    $('plock').textContent='UTXORACLE · '+(o.state||'warming').toUpperCase();
+    const st=(o.state||'warming').toUpperCase();
+    const kind=o.kind ? ' · '+String(o.kind).toUpperCase() : '';
+    $('plock').textContent='UTXORACLE · '+st+kind;
+    $('plock').className='warn';
+    $('oraerr').textContent=o.note||'';
   }
   if(c.height && lastH && c.height>lastH){
-    flash=1;
-    waves.push({r:40,a:0.85,spd:4.2});
+    Dome.pulse();
+    BlockLight.spawn();
     $('log').textContent='block '+c.height+' · light through the oculus';
-  }
-  if(m.tx && lastTx && m.tx>lastTx+80){
-    waves.push({r:30,a:0.4,spd:2.4});
   }
   lastH=c.height||lastH; lastTx=m.tx||lastTx;
   if(!j.ok){

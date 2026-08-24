@@ -11,6 +11,9 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd = argv[0] if argv else "serve"
     cfg = Config.load()
+    from . import log
+
+    log.configure(cfg.log_path, cfg.log_max_bytes, cfg.log_forever)
     if cmd in ("serve", "httpd"):
         from .httpd import serve
 

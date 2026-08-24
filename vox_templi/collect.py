@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .bitcoin import Bitcoin
 from .config import Config
+from . import log
 
 
 def _fee(btc: Bitcoin, blocks: int) -> float | None:
@@ -19,11 +20,20 @@ def _fee(btc: Bitcoin, blocks: int) -> float | None:
 
 def _oracle(path: Path) -> dict:
     if not path.exists():
-        return {"state": "warming", "usd": None, "note": "first on-chain scan not finished"}
+        return {
+            "state": "warming",
+            "usd": None,
+            "kind": "not-run",
+            "note": "oracle job has not written a result yet",
+        }
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
-        return {"state": "error", "usd": None, "note": str(e)}
+        return {"state": "error", "usd": None, "kind": "bad-json", "note": str(e)}
+    if not data.get("usd") and data.get("state") not in ("ok", "warming"):
+        data.setdefault("kind", data.get("state") or "error")
+        data.setdefault("note", "no USD parsed from last scan")
+    return data
 
 
 def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
@@ -39,7 +49,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     mem_bytes = int(mem.get("bytes") or 0)
     mem_tx = int(mem.get("size") or 0)
     mem_cap = int(mem.get("maxmempool") or 300_000_000) or 300_000_000
-    return {
+    out = {
         "ok": True,
         "ts": now,
         "chain": {
@@ -74,6 +84,17 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         },
         "oracle": _oracle(cfg.oracle_json),
     }
+    ora = out["oracle"]
+    log.emit(
+        "snapshot",
+        "ok",
+        height=height,
+        mempool=mem_tx,
+        oracle=ora.get("state"),
+        usd=ora.get("usd"),
+        oracle_kind=ora.get("kind"),
+    )
+    return out
 
 
 def write_snapshot(cfg: Config, data: dict) -> None:

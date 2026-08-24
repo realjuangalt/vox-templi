@@ -62,6 +62,17 @@ VOX_DEPLOY_HOST=your-node ./scripts/deploy.sh
 
 **Space** toggles sound.
 
+## Logging
+
+JSON lines at `$VOX_STATE_DIR/vox.log` (default `/var/lib/vox-templi/vox.log`). RPC in/out, snapshots, oracle runs.
+
+When the file exceeds `VOX_LOG_MAX_BYTES` (default 2 MiB) it is cut to the last half. Set `VOX_LOG_FOREVER=1` to never shrink.
+
+```bash
+tail -f /var/lib/vox-templi/vox.log
+curl -sS http://127.0.0.1:8090/api/log
+```
+
 ## Layout
 
 ```

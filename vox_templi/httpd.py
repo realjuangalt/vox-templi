@@ -8,6 +8,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from .collect import snapshot, write_snapshot
 from .config import Config
+from . import log
 
 _lock = threading.Lock()
 _status: dict = {"ok": False, "note": "starting"}
@@ -25,12 +26,15 @@ def _poller(cfg: Config) -> None:
             with _lock:
                 _status = {"ok": False, "ts": int(time.time()), "note": str(e)}
             print(f"[vox] poll error: {e}", flush=True)
+            log.emit("snapshot", "error", err=str(e))
         time.sleep(cfg.poll_s)
 
 
 def serve(cfg: Config) -> None:
     cfg.www.mkdir(parents=True, exist_ok=True)
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    log.configure(cfg.log_path, cfg.log_max_bytes, cfg.log_forever)
+    log.emit("httpd", "listen", bind=cfg.bind, port=cfg.port)
     threading.Thread(target=_poller, args=(cfg,), name="rpc-poll", daemon=True).start()
 
     www = cfg.www
@@ -49,6 +53,22 @@ def serve(cfg: Config) -> None:
             if path in ("/api/status", "/status.json"):
                 with _lock:
                     body = json.dumps(_status).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/api/log":
+                n = 80
+                q = self.path.split("?", 1)
+                if len(q) > 1 and "n=" in q[1]:
+                    try:
+                        n = int(q[1].split("n=")[1].split("&")[0])
+                    except ValueError:
+                        n = 80
+                body = json.dumps({"lines": log.tail(n)}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Cache-Control", "no-store")

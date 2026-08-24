@@ -8,6 +8,7 @@ import urllib.request
 from typing import Any
 
 from .config import Config
+from . import log
 
 
 class BitcoinRPCError(RuntimeError):
@@ -42,12 +43,22 @@ class Bitcoin:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
+            log.emit("rpc", "http error", method=method, code=e.code)
             raise BitcoinRPCError(f"HTTP {e.code} {method}") from e
         except OSError as e:
+            log.emit("rpc", "unreachable", method=method, err=str(e))
             raise BitcoinRPCError(f"unreachable {self._url}") from e
         if body.get("error"):
+            log.emit("rpc", "error", method=method, error=body["error"])
             raise BitcoinRPCError(f"{method}: {body['error']}")
-        return body.get("result")
+        result = body.get("result")
+        hint = type(result).__name__
+        if isinstance(result, dict) and "blocks" in result:
+            hint = f"blocks={result.get('blocks')}"
+        elif isinstance(result, (list, dict)):
+            hint = f"{type(result).__name__}[{len(result)}]"
+        log.emit("rpc", "ok", method=method, out=hint)
+        return result
 
     @staticmethod
     def sat_vb(btc_per_kvb: float | None) -> float | None:
