@@ -229,7 +229,7 @@ const MempoolFx = {
       r: 0.13,
       vr: 0.017+Math.random()*0.01,
       life: 1,
-      s: 0.9+Math.sqrt(vb)*0.028,
+      s: 2.4+Math.sqrt(vb)*0.05,
       col: mix('#8cf5a8','#ff3b00', t)
     });
     if(this.bolts.length>20) this.bolts.shift();
@@ -243,13 +243,13 @@ const MempoolFx = {
       p.r += p.vr;
       p.life *= 0.992;
       const dist=p.r*R;
-      const grow=0.55+Math.min(1.7, dist/(R*0.9));
+      const grow=1.15+Math.min(2.3, dist/(R*0.72));
       const fade=1-Math.min(1, dist/fadeAt);
       const x=cx+Math.cos(p.a)*dist, y=cy+Math.sin(p.a)*dist;
       g.save();
       g.translate(x,y);
       g.rotate(p.a+Math.PI/2);
-      g.scale(p.s*grow*0.09, p.s*grow*0.09);
+      g.scale(p.s*grow, p.s*grow);
       g.translate(-12,-2);
       g.globalAlpha=Math.max(0,p.life*fade);
       g.fillStyle=p.col;
