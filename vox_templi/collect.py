@@ -7,7 +7,16 @@ from pathlib import Path
 
 from .bitcoin import Bitcoin
 from .config import Config
+from .mempool_watch import ingress
 from . import log
+
+
+def _ingress(btc: Bitcoin) -> list:
+    try:
+        return ingress(btc)
+    except Exception as e:
+        log.emit("mempool", "ingress-fail", err=str(e))
+        return []
 
 
 def _fee(btc: Bitcoin, blocks: int) -> float | None:
@@ -112,6 +121,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "fee_fast": _fee(btc, 1),
             "fee_mid": _fee(btc, 3),
             "fee_slow": _fee(btc, 6),
+            "ingress": _ingress(btc),
         },
         "oracle": _feed(cfg),
     }

@@ -28,7 +28,16 @@
   #plock{font-size:10px;letter-spacing:.2em;color:var(--patina)}
   .ok{color:#8fd4a8} .warn{color:var(--terra)} .bad{color:var(--rust)}
   #mute,#help{position:fixed;bottom:14px;z-index:3;font-size:10px;letter-spacing:.16em;color:var(--mute)}
-  #mute{left:22px} #help{right:22px}
+  #mute{left:22px} #help{right:22px;text-align:right}
+  #explain{
+    display:none;position:fixed;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(520px,86vw);padding:18px 20px;background:#140e0acc;border:1px solid #c4a57466;
+    color:var(--marble);pointer-events:none;letter-spacing:.06em;line-height:1.45
+  }
+  #explain.show{display:block}
+  #explain h2{margin:0 0 10px;font-size:13px;letter-spacing:.22em;color:var(--gold)}
+  #explain p{margin:0 0 8px;font-size:12px;color:var(--trav)}
+  #explain b{color:var(--marble)}
 </style>
 </head>
 <body>
@@ -70,8 +79,16 @@
     <div class="s" id="diff">—</div>
   </div>
 </div>
+<div id="explain">
+  <h2>VOX TEMPLI</h2>
+  <p><b>Space</b> — sound on/off. Kick and hats follow mempool load; pitch follows fees.</p>
+  <p><b>Lightning</b> — a new transaction entered this node’s mempool. Bolt size = vbytes. Color = sat/vB (green cheap → orange expensive).</p>
+  <p><b>Ring of light</b> — a block was found. The circle grows from the oculus to the edge of the screen.</p>
+  <p><b>Price</b> — UTXOracle on this node (daily history when available, else last 144 blocks). Glyphs scramble only while the first price is still computing.</p>
+  <p><b>H</b> closes this panel.</p>
+</div>
 <div id="mute">SOUND OFF · SPACE</div>
-<div id="help">SPACE SOUND · LOOKING UP</div>
+<div id="help">SPACE SOUND · H EXPLAIN</div>
 <script>
 const $ = id => document.getElementById(id);
 let S = null, lastH = 0, lastTx = 0;
@@ -177,42 +194,51 @@ const Dome = {
 };
 
 const MempoolFx = {
-  motes: [],
-  lastTx: 0,
+  bolts: [],
   observe(m){
-    const tx=m&&m.tx||0;
-    if(this.lastTx && tx>this.lastTx){
-      const n=Math.min(14, Math.ceil((tx-this.lastTx)/40));
-      for(let i=0;i<n;i++) this.spawn();
+    const ev=m&&m.ingress;
+    if(Array.isArray(ev)){
+      for(let i=0;i<ev.length;i++) this.spawn(ev[i]);
+      return;
     }
-    this.lastTx=tx;
   },
-  idle(dt){
-    const d=density();
-    if(Math.random() < d*dt*5) this.spawn();
-  },
-  spawn(){
-    const d=density(), f=feeN();
-    this.motes.push({
+  spawn(e){
+    const vb=Math.max(80, +(e&&e.vb)||200);
+    const sat=Math.max(0.1, +(e&&e.sat_vb)||1);
+    const size=Math.max(8, Math.min(28, 6+Math.sqrt(vb)*0.35));
+    const t=Math.min(1, Math.log2(sat+1)/6);
+    const col=mix('#7ee08a','#ff6a1a', t);
+    this.bolts.push({
       a: Math.random()*Math.PI*2,
-      r: 0.35+Math.random()*0.5,
-      vr: -(0.06+d*0.14),
+      r: 0.42+Math.random()*0.42,
       life: 1,
-      size: 3+d*5,
-      col: f>0.35 ? '#ff8f3d' : (d>0.55 ? '#70d7ff' : '#7ee08a')
+      size, col,
+      rot: (Math.random()-0.5)*0.6
     });
-    if(this.motes.length>48) this.motes.shift();
+    if(this.bolts.length>36) this.bolts.shift();
+  },
+  bolt(x, y, s, col){
+    ctx.fillStyle=col;
+    const u=s/10;
+    ctx.fillRect(x+2*u, y-5*u, 2*u, 2*u);
+    ctx.fillRect(x+1*u, y-3*u, 3*u, 2*u);
+    ctx.fillRect(x-1*u, y-1*u, 4*u, 2*u);
+    ctx.fillRect(x+1*u, y+1*u, 2*u, 2*u);
+    ctx.fillRect(x-2*u, y+3*u, 3*u, 2*u);
+    ctx.fillRect(x, y+5*u, 2*u, 2*u);
   },
   draw(cx, cy, R){
-    for(let i=this.motes.length-1;i>=0;i--){
-      const p=this.motes[i];
-      p.r += p.vr;
-      p.life -= 0.018;
+    for(let i=this.bolts.length-1;i>=0;i--){
+      const p=this.bolts[i];
+      p.life -= 0.016;
       const x=cx+Math.cos(p.a)*p.r*R, y=cy+Math.sin(p.a)*p.r*R;
       ctx.globalAlpha=Math.max(0,p.life);
-      ctx.fillStyle=p.col;
-      ctx.fillRect(x-p.size/2, y-p.size/2, p.size, p.size);
-      if(p.life<=0 || p.r<0.14) this.motes.splice(i,1);
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.rotate(p.rot);
+      this.bolt(0,0,p.size,p.col);
+      ctx.restore();
+      if(p.life<=0) this.bolts.splice(i,1);
     }
     ctx.globalAlpha=1;
   }
@@ -276,7 +302,6 @@ function draw(){
   ctx.fillStyle=vg; ctx.fillRect(0,0,iw,ih);
   Dome.tick(dt);
   Dome.draw(cx, cy, R, d, f, ag);
-  MempoolFx.idle(dt);
   MempoolFx.draw(cx, cy, R);
   BlockLight.draw(cx, cy, iw, ih);
 }
@@ -370,6 +395,10 @@ function mute(){
 }
 addEventListener('keydown', e=>{
   if(e.code==='Space'){ e.preventDefault(); muted?unmute():mute(); }
+  if(e.key==='h'||e.key==='H'||e.key==='?'){
+    e.preventDefault();
+    $('explain').classList.toggle('show');
+  }
 });
 setTimeout(()=>{ unmute().catch(()=>{}); }, 800);
 
