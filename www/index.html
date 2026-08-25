@@ -15,30 +15,30 @@
   #viz{image-rendering:pixelated;z-index:0}
   #fx{image-rendering:auto;z-index:1;pointer-events:none}
   #hud{position:fixed;inset:0;z-index:2;pointer-events:none;
-    display:grid;grid-template:"nw n ne" auto "w c e" 1fr "sw s se" auto / 22% 1fr 22%;
-    padding:18px 22px; gap:8px 16px;
+    display:grid;grid-template:"nw n ne" auto "w c e" 1fr "sw s se" auto / 24% 1fr 24%;
+    padding:22px 26px; gap:10px 20px;
     text-shadow:0 1px 0 #000c, 0 0 10px #d4af3733}
   .cell{letter-spacing:.12em}
-  .k{font-size:9px;color:var(--trav);text-transform:uppercase;letter-spacing:.22em}
-  .v{font-size:22px;font-weight:700;color:var(--marble);margin-top:3px}
-  .s{font-size:11px;color:var(--mute);margin-top:2px;word-break:break-all}
+  .k{font-size:16px;color:var(--trav);text-transform:uppercase;letter-spacing:.22em}
+  .v{font-size:36px;font-weight:700;color:var(--marble);margin-top:4px}
+  .s{font-size:18px;color:var(--mute);margin-top:4px;word-break:break-all}
   #nw{grid-area:nw} #n{grid-area:n;text-align:center} #ne{grid-area:ne;text-align:right}
   #w{grid-area:w;align-self:center} #c{grid-area:c} #e{grid-area:e;text-align:right;align-self:center}
   #sw{grid-area:sw} #s{grid-area:s;text-align:center} #se{grid-area:se;text-align:right}
-  #n .brand{font-size:11px;letter-spacing:.28em;color:var(--gold)}
+  #n .brand{font-size:18px;letter-spacing:.28em;color:var(--gold)}
   #price{font-size:42px;color:var(--gold);letter-spacing:.06em}
-  #plock{font-size:10px;letter-spacing:.2em;color:var(--patina)}
+  #plock{font-size:14px;letter-spacing:.2em;color:var(--patina)}
   .ok{color:#8fd4a8} .warn{color:var(--terra)} .bad{color:var(--rust)}
-  #mute,#help{position:fixed;bottom:14px;z-index:3;font-size:10px;letter-spacing:.16em;color:var(--mute)}
+  #mute,#help{position:fixed;bottom:16px;z-index:3;font-size:14px;letter-spacing:.16em;color:var(--mute)}
   #mute{left:22px} #help{right:22px;text-align:right}
   #explain{
     display:none;position:fixed;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:min(520px,86vw);padding:18px 20px;background:#140e0acc;border:1px solid #c4a57466;
+    width:min(640px,86vw);padding:22px 24px;background:#140e0acc;border:1px solid #c4a57466;
     color:var(--marble);pointer-events:none;letter-spacing:.06em;line-height:1.45
   }
   #explain.show{display:block}
-  #explain h2{margin:0 0 10px;font-size:13px;letter-spacing:.22em;color:var(--gold)}
-  #explain p{margin:0 0 8px;font-size:12px;color:var(--trav)}
+  #explain h2{margin:0 0 10px;font-size:18px;letter-spacing:.22em;color:var(--gold)}
+  #explain p{margin:0 0 8px;font-size:16px;color:var(--trav)}
   #explain b{color:var(--marble)}
 </style>
 </head>
