@@ -62,6 +62,10 @@ def serve(cfg: Config) -> None:
         def log_message(self, fmt, *args):
             print(f"[vox] {self.address_string()} {fmt % args}", flush=True)
 
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
         def do_GET(self):
             path = self.path.split("?", 1)[0]
             if path in ("/api/status", "/status.json"):

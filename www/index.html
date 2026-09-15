@@ -130,9 +130,14 @@ function feeN(){
   const f=(S&&S.mempool&&S.mempool.fee_mid)||1;
   return Math.min(1, Math.log2(f+1)/6);
 }
+function liveAge(){
+  const t=S && S.chain && Number(S.chain.block_time);
+  if(t) return Math.max(0, Math.floor(Date.now()/1000 - t));
+  const a=S && S.chain && S.chain.block_age_s;
+  return a==null ? null : Math.max(0, Number(a));
+}
 function ageN(){
-  const a=(S&&S.chain&&S.chain.block_age_s)||0;
-  return Math.min(1, a/600);
+  return Math.min(1, (liveAge()||0)/600);
 }
 
 function coffer(cx,cy,r0,r1,a0,a1, fill, stroke){
@@ -432,9 +437,17 @@ addEventListener('keydown', e=>{
 setTimeout(()=>{ unmute().catch(()=>{}); }, 800);
 
 function fmtAge(s){
+  s=Math.floor(Number(s)||0);
   if(s<90) return s+'s';
   if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
   return Math.floor(s/3600)+'h';
+}
+function paintClockAge(){
+  const age=liveAge();
+  if(age==null || !isFinite(age)) return;
+  $('clock').textContent=new Date().toISOString().slice(11,16)+' UTC';
+  $('age').textContent=fmtAge(age);
+  $('age').className='v '+(age>=7200?'bad':(age>=1800?'warn':''));
 }
 function healthLevel(j){
   const h=j && j.health;
@@ -466,16 +479,13 @@ function render(j){
   const o = S.oracle || {};
   const health = S.health || {};
   const flags = health.flags || [];
-  const age = Number(c["block_age_s"] != null ? c["block_age_s"] : 0);
   const halv = c["next_halving_blocks"] || 0;
   const eh = c["nethash_eh"] || 0;
   const level = healthLevel(S);
   const syncTxt = syncLabel(c, health);
-  $('clock').textContent=new Date().toISOString().slice(11,16)+' UTC';
   $('h').textContent=c.height!=null?c.height:'—';
   $('hash').textContent=(c.hash||'').slice(0,20)+'…';
-  $('age').textContent=fmtAge(age);
-  $('age').className='v '+(age>=7200?'bad':(age>=1800?'warn':''));
+  paintClockAge();
   $('sync').textContent=syncTxt;
   $('sync').className=level==='ok'?'ok':level;
   $('peers').textContent=n.peers!=null?n.peers:'—';
@@ -538,7 +548,7 @@ async function poll(){
     $('log').textContent='rpc poll failed: '+(e && e.message ? e.message : e);
   }
 }
-poll(); setInterval(poll, 8000);
+poll(); setInterval(poll, 8000); setInterval(paintClockAge, 1000);
 </script>
 </body>
 </html>
