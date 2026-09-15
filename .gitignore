@@ -11,3 +11,13 @@ var/
 UTXOracle_*.html
 chromium/
 *.log
+
+# Local secrets / host env — never commit filled copies
+.env
+.env.*
+*.env
+!config.example.env
+*.cookie
+.cookie
+secrets/
+/etc/

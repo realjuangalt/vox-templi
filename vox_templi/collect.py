@@ -10,6 +10,12 @@ from .config import Config
 from .mempool_watch import ingress
 from . import log
 
+# Tip / sync thresholds for kiosk health flags (seconds / block counts).
+_STALE_WARN_S = 30 * 60
+_STALE_BAD_S = 2 * 3600
+_BEHIND_WARN = 3
+_BEHIND_BAD = 12
+
 
 def _ingress(btc: Bitcoin) -> list:
     try:
@@ -76,6 +82,78 @@ def _feed(cfg: Config) -> dict:
     return live
 
 
+def _flag(code: str, level: str, text: str) -> dict:
+    return {"code": code, "level": level, "text": text}
+
+
+def health_flags(
+    *,
+    peers: int,
+    behind: int,
+    block_age_s: int,
+    ibd: bool,
+    progress: float,
+    mempool_loaded: bool | None,
+) -> dict:
+    """Derive human-readable health flags for the kiosk HUD."""
+    flags: list[dict] = []
+
+    if peers <= 0:
+        flags.append(_flag("NO_PEERS", "bad", "0 peers · network may be down"))
+    elif peers < 2:
+        flags.append(_flag("LOW_PEERS", "warn", f"{peers} peer · weak connectivity"))
+
+    if ibd:
+        flags.append(
+            _flag("IBD", "warn", f"initial block download {(progress * 100):.2f}%")
+        )
+
+    if behind >= _BEHIND_BAD:
+        flags.append(
+            _flag(
+                "BEHIND_HEADERS",
+                "bad",
+                f"{behind} blocks behind headers · catching up or stuck",
+            )
+        )
+    elif behind >= _BEHIND_WARN:
+        flags.append(_flag("BEHIND_HEADERS", "warn", f"{behind} blocks behind headers"))
+
+    if block_age_s >= _STALE_BAD_S:
+        hours = block_age_s // 3600
+        flags.append(
+            _flag(
+                "STALE_TIP",
+                "bad",
+                f"tip age {hours}h · likely offline or not receiving blocks",
+            )
+        )
+    elif block_age_s >= _STALE_WARN_S and not ibd:
+        mins = block_age_s // 60
+        flags.append(_flag("STALE_TIP", "warn", f"tip age {mins}m · no recent block"))
+
+    if mempool_loaded is False:
+        flags.append(_flag("MEMPOOL_LOADING", "warn", "mempool still loading from disk"))
+
+    if not flags:
+        flags.append(_flag("OK", "ok", "node healthy"))
+
+    order = {"bad": 0, "warn": 1, "ok": 2}
+    level = min((f["level"] for f in flags), key=lambda lv: order.get(lv, 9))
+    return {"level": level, "flags": flags}
+
+
+def health_from_error(note: str) -> dict:
+    text = (note or "rpc unreachable").strip()
+    low = text.lower()
+    if "timed out" in low or "unreachable" in low or "connection" in low:
+        code, level = "RPC_DOWN", "bad"
+        text = "bitcoind RPC unreachable · node starting, overloaded, or down"
+    else:
+        code, level = "RPC_ERROR", "bad"
+    return {"level": level, "flags": [_flag(code, level, text)]}
+
+
 def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     btc = btc or Bitcoin(cfg)
     chain = btc.call("getblockchaininfo")
@@ -83,21 +161,39 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     mem = btc.call("getmempoolinfo")
     mining = btc.call("getmininginfo")
     height = int(chain["blocks"])
+    headers = int(chain.get("headers") or height)
+    behind = max(0, headers - height)
     header = btc.call("getblockheader", chain["bestblockhash"])
     now = int(time.time())
     block_age = max(0, now - int(header.get("time") or now))
     mem_bytes = int(mem.get("bytes") or 0)
     mem_tx = int(mem.get("size") or 0)
     mem_cap = int(mem.get("maxmempool") or 300_000_000) or 300_000_000
+    mempool_loaded = mem.get("loaded")
+    if mempool_loaded is not None:
+        mempool_loaded = bool(mempool_loaded)
+    peers = int(net.get("connections") or 0)
+    ibd = bool(chain.get("initialblockdownload"))
+    progress = float(chain.get("verificationprogress") or 0)
+    health = health_flags(
+        peers=peers,
+        behind=behind,
+        block_age_s=block_age,
+        ibd=ibd,
+        progress=progress,
+        mempool_loaded=mempool_loaded,
+    )
     out = {
         "ok": True,
         "ts": now,
+        "health": health,
         "chain": {
             "height": height,
-            "headers": int(chain.get("headers") or height),
+            "headers": headers,
+            "behind": behind,
             "hash": chain.get("bestblockhash"),
-            "ibd": bool(chain.get("initialblockdownload")),
-            "progress": float(chain.get("verificationprogress") or 0),
+            "ibd": ibd,
+            "progress": progress,
             "disk_gb": round(int(chain.get("size_on_disk") or 0) / 1e9, 1),
             "pruned": bool(chain.get("pruned")),
             "difficulty": float(mining.get("difficulty") or 0),
@@ -107,7 +203,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "next_halving_blocks": 210000 - (height % 210000),
         },
         "net": {
-            "peers": int(net.get("connections") or 0),
+            "peers": peers,
             "in": int(net.get("connections_in") or 0),
             "out": int(net.get("connections_out") or 0),
             "version": (net.get("subversion") or "").strip(),
@@ -117,6 +213,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "mb": round(mem_bytes / 1e6, 2),
             "usage_mb": round(int(mem.get("usage") or 0) / 1e6, 1),
             "fill": min(1.0, mem_bytes / mem_cap),
+            "loaded": mempool_loaded,
             "min_sat_vb": Bitcoin.sat_vb(mem.get("mempoolminfee")),
             "fee_fast": _fee(btc, 1),
             "fee_mid": _fee(btc, 3),
@@ -130,6 +227,10 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         "snapshot",
         "ok",
         height=height,
+        behind=behind,
+        peers=peers,
+        health=health.get("level"),
+        flags=",".join(f["code"] for f in health.get("flags") or []),
         mempool=mem_tx,
         oracle=ora.get("state"),
         usd=ora.get("usd"),

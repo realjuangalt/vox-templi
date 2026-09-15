@@ -75,6 +75,7 @@
     <div id="plock">UTXORACLE · NODE ONLY</div>
     <div id="price">$ —. —</div>
     <div class="s" id="oraerr"></div>
+    <div class="s" id="flags"></div>
     <div class="s" id="log">waiting for local bitcoind…</div>
   </div>
   <div class="cell" id="se">
@@ -88,6 +89,7 @@
   <p><b>Lightning</b> — a new mempool tx. Flies out of the oculus toward the edge (grows as it comes closer). Size = vbytes. Color = sat/vB (green cheap → orange expensive).</p>
   <p><b>Ring of light</b> — a block was found. The circle grows from the oculus to the edge of the screen.</p>
   <p><b>Price</b> — UTXOracle on this node (daily history when available, else last 144 blocks). Glyphs scramble only while the first price is still computing.</p>
+  <p><b>Health flags</b> — south panel warns on 0 peers, stale tip, blocks behind headers, IBD, mempool still loading, or RPC down.</p>
   <p><b>H</b> closes this panel.</p>
 </div>
 <div id="mute">SOUND OFF · SPACE</div>
@@ -434,12 +436,27 @@ function fmtAge(s){
   if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
   return Math.floor(s/3600)+'h';
 }
-function pick(obj, keys, fallback){
-  if(!obj) return fallback;
-  for(let i=0;i<keys.length;i++){
-    if(obj[keys[i]]!=null) return obj[keys[i]];
+function healthLevel(j){
+  const h=j && j.health;
+  if(h && h.level) return h.level;
+  if(j && j.ok===false) return 'bad';
+  return 'ok';
+}
+function syncLabel(c, health){
+  const ibd=!!(c && c.ibd);
+  const behind=Number((c && c.behind)!=null ? c.behind : 0);
+  const flags=(health && health.flags) || [];
+  const codes=flags.map(f=>f.code);
+  if(codes.indexOf('RPC_DOWN')>=0 || codes.indexOf('RPC_ERROR')>=0) return 'RPC DOWN';
+  if(codes.indexOf('NO_PEERS')>=0) return 'NO PEERS';
+  if(ibd) return 'IBD '+(((c.progress||0)*100).toFixed(2))+'%';
+  if(behind>=12) return 'BEHIND '+behind;
+  if(behind>=3) return 'CATCHING UP '+behind;
+  if(codes.indexOf('STALE_TIP')>=0){
+    const f=flags.find(x=>x.code==='STALE_TIP');
+    return f && f.level==='bad' ? 'STALE TIP' : 'QUIET TIP';
   }
-  return fallback;
+  return 'SYNCED';
 }
 function render(j){
   S=j||{};
@@ -447,23 +464,38 @@ function render(j){
   const n = S.net || {};
   const m = S.mempool || {};
   const o = S.oracle || {};
+  const health = S.health || {};
+  const flags = health.flags || [];
   const age = Number(c["block_age_s"] != null ? c["block_age_s"] : 0);
-  const ibd = !!c["ibd"];
   const halv = c["next_halving_blocks"] || 0;
   const eh = c["nethash_eh"] || 0;
+  const level = healthLevel(S);
+  const syncTxt = syncLabel(c, health);
   $('clock').textContent=new Date().toISOString().slice(11,16)+' UTC';
   $('h').textContent=c.height!=null?c.height:'—';
   $('hash').textContent=(c.hash||'').slice(0,20)+'…';
   $('age').textContent=fmtAge(age);
-  $('sync').textContent=ibd?'IBD '+((c.progress||0)*100).toFixed(2)+'%':'SYNCED';
-  $('sync').className=ibd?'warn':'ok';
+  $('age').className='v '+(age>=7200?'bad':(age>=1800?'warn':''));
+  $('sync').textContent=syncTxt;
+  $('sync').className=level==='ok'?'ok':level;
   $('peers').textContent=n.peers!=null?n.peers:'—';
+  $('peers').className='v '+(n.peers===0?'bad':(n.peers!=null && n.peers<2?'warn':''));
   $('ver').textContent=(n.version||'').replace(/\//g,'');
   $('mp').textContent=(m.tx||0).toLocaleString();
-  $('mpb').textContent=(m.mb||0)+' MB · '+Math.round((m.fill||0)*100)+'%';
+  let mpb=(m.mb||0)+' MB · '+Math.round((m.fill||0)*100)+'%';
+  if(m.loaded===false) mpb+=' · loading';
+  $('mpb').textContent=mpb;
   $('fee').textContent=[m.fee_slow,m.fee_mid,m.fee_fast].map(x=>x==null?'—':Math.round(x)).join(' / ');
   $('halv').textContent=Number(halv).toLocaleString();
   $('diff').textContent=Number(eh)+' EH/s';
+  const alertFlags=flags.filter(f=>f.code!=='OK');
+  if(alertFlags.length){
+    $('flags').textContent=alertFlags.map(f=>f.text).join(' · ');
+    $('flags').className='s '+level;
+  } else {
+    $('flags').textContent='';
+    $('flags').className='s';
+  }
   PriceScramble.set(o);
   if(o.usd){
     $('plock').textContent=(o.source==='daily-history')
@@ -486,11 +518,15 @@ function render(j){
   MempoolFx.observe(m);
   lastH=c.height||lastH; lastTx=m.tx||lastTx;
   if(!j.ok){
-    $('log').textContent=j.note||'rpc error';
+    const top=(alertFlags[0] && alertFlags[0].text) || j.note || 'rpc error';
+    $('log').textContent=top;
+    $('log').className='s bad';
+  } else if(alertFlags.length){
+    $('log').textContent=alertFlags[0].text;
+    $('log').className='s '+level;
   } else if(c.height){
-    const log=$('log').textContent||'';
-    if(!log || /waiting|poll failed|rpc error/i.test(log))
-      $('log').textContent='node live · height '+c.height+' · local rpc';
+    $('log').textContent='node live · height '+c.height+' · local rpc';
+    $('log').className='s ok';
   }
 }
 async function poll(){

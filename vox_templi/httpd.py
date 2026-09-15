@@ -6,12 +6,19 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from .collect import snapshot, write_snapshot
+from .collect import health_from_error, snapshot, write_snapshot
 from .config import Config
 from . import log
 
 _lock = threading.Lock()
-_status: dict = {"ok": False, "note": "starting"}
+_status: dict = {
+    "ok": False,
+    "note": "starting",
+    "health": {
+        "level": "warn",
+        "flags": [{"code": "STARTING", "level": "warn", "text": "waiting for first RPC snapshot"}],
+    },
+}
 
 
 def _poller(cfg: Config) -> None:
@@ -23,10 +30,17 @@ def _poller(cfg: Config) -> None:
             with _lock:
                 _status = data
         except Exception as e:
+            note = str(e)
+            err = {
+                "ok": False,
+                "ts": int(time.time()),
+                "note": note,
+                "health": health_from_error(note),
+            }
             with _lock:
-                _status = {"ok": False, "ts": int(time.time()), "note": str(e)}
+                _status = err
             print(f"[vox] poll error: {e}", flush=True)
-            log.emit("snapshot", "error", err=str(e))
+            log.emit("snapshot", "error", err=note)
         time.sleep(cfg.poll_s)
 
 
