@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -42,17 +43,31 @@ class Bitcoin:
         )
         if timeout is None:
             timeout = self._timeout
+        t0 = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
-            log.emit("rpc", "http error", method=method, code=e.code)
+            log.emit(
+                "rpc",
+                "http error",
+                method=method,
+                code=e.code,
+                ms=int((time.monotonic() - t0) * 1000),
+            )
             raise BitcoinRPCError(f"HTTP {e.code} {method}") from e
         except OSError as e:
-            log.emit("rpc", "unreachable", method=method, err=str(e))
+            log.emit(
+                "rpc",
+                "unreachable",
+                method=method,
+                err=str(e),
+                ms=int((time.monotonic() - t0) * 1000),
+            )
             raise BitcoinRPCError(f"unreachable {self._url}") from e
+        ms = int((time.monotonic() - t0) * 1000)
         if body.get("error"):
-            log.emit("rpc", "error", method=method, error=body["error"])
+            log.emit("rpc", "error", method=method, error=body["error"], ms=ms)
             raise BitcoinRPCError(f"{method}: {body['error']}")
         result = body.get("result")
         hint = type(result).__name__
@@ -60,7 +75,9 @@ class Bitcoin:
             hint = f"blocks={result.get('blocks')}"
         elif isinstance(result, (list, dict)):
             hint = f"{type(result).__name__}[{len(result)}]"
-        log.emit("rpc", "ok", method=method, out=hint)
+        # Fast successes are noise; snapshot lines already have height/peers.
+        if ms >= 2000:
+            log.emit("rpc", "slow", method=method, ms=ms, out=hint)
         return result
 
     @staticmethod

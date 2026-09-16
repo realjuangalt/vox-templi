@@ -15,6 +15,7 @@ _STALE_WARN_S = 30 * 60
 _STALE_BAD_S = 2 * 3600
 _BEHIND_WARN = 3
 _BEHIND_BAD = 12
+_last_health_key: tuple | None = None
 
 
 def _ingress(btc: Bitcoin) -> list:
@@ -283,6 +284,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         "oracle": _feed(cfg),
     }
     ora = out["oracle"]
+    flags = ",".join(f["code"] for f in health.get("flags") or [])
     log.emit(
         "snapshot",
         "ok",
@@ -290,12 +292,25 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         behind=behind,
         peers=peers,
         health=health.get("level"),
-        flags=",".join(f["code"] for f in health.get("flags") or []),
+        flags=flags,
         mempool=mem_tx,
         oracle=ora.get("state"),
         usd=ora.get("usd"),
         oracle_kind=ora.get("kind"),
     )
+    global _last_health_key
+    key = (health.get("level"), flags, peers, behind)
+    if key != _last_health_key:
+        log.emit(
+            "health",
+            "change",
+            level=health.get("level"),
+            flags=flags,
+            peers=peers,
+            behind=behind,
+            height=height,
+        )
+        _last_health_key = key
     return out
 
 
