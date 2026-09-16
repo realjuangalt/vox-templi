@@ -99,7 +99,9 @@ def health_flags(
     """Derive human-readable health flags for the kiosk HUD."""
     flags: list[dict] = []
 
-    if peers <= 0:
+    if peers < 0:
+        pass
+    elif peers <= 0:
         flags.append(_flag("NO_PEERS", "bad", "0 peers · network may be down"))
     elif peers < 2:
         flags.append(_flag("LOW_PEERS", "warn", f"{peers} peer · weak connectivity"))
@@ -176,6 +178,7 @@ def _soft(btc: Bitcoin, method: str, *params, timeout: float | None = None):
 
 def merge_status(prev: dict, incoming: dict) -> dict:
     """Keep last-good HUD fields when this poll is incomplete or failed."""
+    incoming = restore_net(prev, incoming)
     if incoming.get("ok") and incoming.get("chain"):
         return incoming
     prev = prev or {}
@@ -203,34 +206,75 @@ def merge_status(prev: dict, incoming: dict) -> dict:
     return out
 
 
+def restore_net(prev: dict, data: dict) -> dict:
+    """Do not let a failed getnetworkinfo publish peers=0 over a live node."""
+    incoming_net = data.get("net")
+    if incoming_net is not None and incoming_net.get("peers") is not None:
+        return data
+    prev_net = (prev or {}).get("net")
+    if not prev_net:
+        return data
+    data = dict(data)
+    data["net"] = prev_net
+    peers = int(prev_net.get("peers") or 0)
+    if peers > 0:
+        flags = [
+            f
+            for f in ((data.get("health") or {}).get("flags") or [])
+            if f.get("code") not in ("NO_PEERS", "LOW_PEERS")
+        ]
+        if not flags:
+            flags = [_flag("OK", "ok", "node healthy")]
+        order = {"bad": 0, "warn": 1, "ok": 2}
+        level = min((f["level"] for f in flags), key=lambda lv: order.get(lv, 9), default="ok")
+        data["health"] = {"level": level, "flags": flags}
+    return data
+
+
 def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     btc = btc or Bitcoin(cfg)
     now = int(time.time())
-    # Peers first: cheap, and the HUD must not go blank if chain RPC is slow.
-    net = _soft(btc, "getnetworkinfo", timeout=15) or {}
+    # Peers first. A timeout must not be recorded as 0 connections.
+    net = _soft(btc, "getnetworkinfo", timeout=15)
+    if net is None:
+        cnt = _soft(btc, "getconnectioncount", timeout=8)
+        if cnt is not None:
+            net = {
+                "connections": int(cnt),
+                "connections_in": 0,
+                "connections_out": int(cnt),
+                "subversion": "",
+            }
     chain = _soft(btc, "getblockchaininfo", timeout=max(60.0, btc._timeout))
-    mem = _soft(btc, "getmempoolinfo", timeout=15) or {}
-    peers = int(net.get("connections") or 0)
-    net_out = {
-        "peers": peers,
-        "in": int(net.get("connections_in") or 0),
-        "out": int(net.get("connections_out") or 0),
-        "version": (net.get("subversion") or "").strip(),
-    }
+    mem = _soft(btc, "getmempoolinfo", timeout=10) if net is not None else None
+    net_out = None
+    peers = -1
+    if isinstance(net, dict):
+        peers = int(net.get("connections") or 0)
+        net_out = {
+            "peers": peers,
+            "in": int(net.get("connections_in") or 0),
+            "out": int(net.get("connections_out") or 0),
+            "version": (net.get("subversion") or "").strip(),
+        }
     if not chain:
-        return {
+        out = {
             "ok": False,
             "ts": now,
             "note": "getblockchaininfo timed out",
-            "net": net_out if net else {},
             "health": health_from_error("timed out", had_snapshot=False),
             "oracle": _feed(cfg),
         }
+        if net_out is not None:
+            out["net"] = net_out
+        return out
     height = int(chain["blocks"])
     headers = int(chain.get("headers") or height)
     behind = max(0, headers - height)
-    header = _soft(btc, "getblockheader", chain["bestblockhash"], timeout=20) or {}
-    block_age = max(0, now - int(header.get("time") or now))
+    header = _soft(btc, "getblockheader", chain["bestblockhash"], timeout=12) or {}
+    block_time = int(header.get("time") or 0)
+    block_age = max(0, now - block_time) if block_time else 0
+    mem = mem or {}
     mem_bytes = int(mem.get("bytes") or 0)
     mem_tx = int(mem.get("size") or 0)
     mem_cap = int(mem.get("maxmempool") or 300_000_000) or 300_000_000
@@ -239,7 +283,8 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         mempool_loaded = bool(mempool_loaded)
     ibd = bool(chain.get("initialblockdownload"))
     progress = float(chain.get("verificationprogress") or 0)
-    mining = _soft(btc, "getmininginfo", timeout=8) or {}
+    mining = _soft(btc, "getmininginfo", timeout=6) if net is not None else None
+    mining = mining or {}
     health = health_flags(
         peers=peers,
         behind=behind,
@@ -264,11 +309,10 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "pruned": bool(chain.get("pruned")),
             "difficulty": float(mining.get("difficulty") or chain.get("difficulty") or 0),
             "nethash_eh": round(float(mining.get("networkhashps") or 0) / 1e18, 2),
-            "block_time": int(header.get("time") or 0),
+            "block_time": block_time,
             "block_age_s": block_age,
             "next_halving_blocks": 210000 - (height % 210000),
         },
-        "net": net_out,
         "mempool": {
             "tx": mem_tx,
             "mb": round(mem_bytes / 1e6, 2),
@@ -283,6 +327,8 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         },
         "oracle": _feed(cfg),
     }
+    if net_out is not None:
+        out["net"] = net_out
     ora = out["oracle"]
     flags = ",".join(f["code"] for f in health.get("flags") or [])
     log.emit(

@@ -6,7 +6,7 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from .collect import health_from_error, merge_status, snapshot, write_snapshot
+from .collect import health_from_error, merge_status, restore_net, snapshot, write_snapshot
 from .config import Config
 from . import log
 
@@ -29,6 +29,7 @@ def _poller(cfg: Config) -> None:
             with _lock:
                 prev = _status
             if data.get("ok") and data.get("chain"):
+                data = restore_net(prev, data)
                 write_snapshot(cfg, data)
                 with _lock:
                     _status = data
