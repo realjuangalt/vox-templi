@@ -21,6 +21,7 @@ class Bitcoin:
     def __init__(self, cfg: Config):
         self._url = cfg.rpc_url
         self._cookie = cfg.bitcoin_cookie
+        self._timeout = float(getattr(cfg, "rpc_timeout", 45) or 45)
 
     def _auth(self) -> str:
         try:
@@ -29,7 +30,7 @@ class Bitcoin:
             raise BitcoinRPCError(f"cannot read RPC cookie {self._cookie}") from e
         return "Basic " + base64.b64encode(raw.encode()).decode()
 
-    def call(self, method: str, *params: Any, timeout: float = 20) -> Any:
+    def call(self, method: str, *params: Any, timeout: float | None = None) -> Any:
         payload = json.dumps(
             {"jsonrpc": "1.0", "id": "vox-templi", "method": method, "params": list(params)}
         ).encode()
@@ -39,6 +40,8 @@ class Bitcoin:
             headers={"Content-Type": "application/json", "Authorization": self._auth()},
             method="POST",
         )
+        if timeout is None:
+            timeout = self._timeout
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = json.loads(resp.read().decode())

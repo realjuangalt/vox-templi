@@ -22,6 +22,7 @@ class Config:
     bind: str
     port: int
     poll_s: float
+    rpc_timeout: float
     state_dir: Path
     www: Path
     vendor_oracle: Path
@@ -45,6 +46,7 @@ class Config:
             bind=bind,
             port=port,
             poll_s=float(os.environ.get("VOX_POLL", "8")),
+            rpc_timeout=float(os.environ.get("VOX_RPC_TIMEOUT", "45")),
             state_dir=state,
             www=_path("VOX_WWW", prefix / "www"),
             vendor_oracle=_path("VOX_ORACLE_SCRIPT", prefix / "vendor" / "UTXOracle.py"),

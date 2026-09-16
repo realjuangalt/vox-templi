@@ -5,7 +5,7 @@ import json
 import time
 from pathlib import Path
 
-from .bitcoin import Bitcoin
+from .bitcoin import Bitcoin, BitcoinRPCError
 from .config import Config
 from .mempool_watch import ingress
 from . import log
@@ -143,10 +143,21 @@ def health_flags(
     return {"level": level, "flags": flags}
 
 
-def health_from_error(note: str) -> dict:
+def health_from_error(note: str, *, had_snapshot: bool = False) -> dict:
     text = (note or "rpc unreachable").strip()
     low = text.lower()
     if "timed out" in low or "unreachable" in low or "connection" in low:
+        if had_snapshot:
+            return {
+                "level": "warn",
+                "flags": [
+                    _flag(
+                        "RPC_SLOW",
+                        "warn",
+                        "bitcoind RPC slow · showing last good snapshot",
+                    )
+                ],
+            }
         code, level = "RPC_DOWN", "bad"
         text = "bitcoind RPC unreachable · node starting, overloaded, or down"
     else:
@@ -154,17 +165,70 @@ def health_from_error(note: str) -> dict:
     return {"level": level, "flags": [_flag(code, level, text)]}
 
 
+def _soft(btc: Bitcoin, method: str, *params, timeout: float | None = None):
+    try:
+        return btc.call(method, *params, timeout=timeout)
+    except (BitcoinRPCError, OSError, ValueError, TypeError) as e:
+        log.emit("rpc", "soft-fail", method=method, err=str(e))
+        return None
+
+
+def merge_status(prev: dict, incoming: dict) -> dict:
+    """Keep last-good HUD fields when this poll is incomplete or failed."""
+    if incoming.get("ok") and incoming.get("chain"):
+        return incoming
+    prev = prev or {}
+    out = dict(prev)
+    for k in ("chain", "net", "mempool", "oracle"):
+        if incoming.get(k):
+            out[k] = incoming[k]
+    now = int(incoming.get("ts") or time.time())
+    out["ok"] = False
+    out["ts"] = now
+    out["stale"] = True
+    out["note"] = incoming.get("note") or prev.get("note") or "rpc slow"
+    prev_flags = [
+        f
+        for f in ((prev.get("health") or {}).get("flags") or [])
+        if f.get("code") not in ("OK", "RPC_DOWN", "RPC_SLOW", "RPC_ERROR", "STARTING")
+    ]
+    slow = health_from_error(out["note"], had_snapshot=bool(prev.get("chain")))
+    flags = list(slow.get("flags") or []) + prev_flags
+    if incoming.get("net") and int((incoming.get("net") or {}).get("peers") or 0) > 0:
+        flags = [f for f in flags if f.get("code") not in ("NO_PEERS", "LOW_PEERS")]
+    order = {"bad": 0, "warn": 1, "ok": 2}
+    level = min((f["level"] for f in flags), key=lambda lv: order.get(lv, 9), default="warn")
+    out["health"] = {"level": level, "flags": flags}
+    return out
+
+
 def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     btc = btc or Bitcoin(cfg)
-    chain = btc.call("getblockchaininfo")
-    net = btc.call("getnetworkinfo")
-    mem = btc.call("getmempoolinfo")
-    mining = btc.call("getmininginfo")
+    now = int(time.time())
+    # Peers first: cheap, and the HUD must not go blank if chain RPC is slow.
+    net = _soft(btc, "getnetworkinfo", timeout=15) or {}
+    chain = _soft(btc, "getblockchaininfo", timeout=max(60.0, btc._timeout))
+    mem = _soft(btc, "getmempoolinfo", timeout=15) or {}
+    peers = int(net.get("connections") or 0)
+    net_out = {
+        "peers": peers,
+        "in": int(net.get("connections_in") or 0),
+        "out": int(net.get("connections_out") or 0),
+        "version": (net.get("subversion") or "").strip(),
+    }
+    if not chain:
+        return {
+            "ok": False,
+            "ts": now,
+            "note": "getblockchaininfo timed out",
+            "net": net_out if net else {},
+            "health": health_from_error("timed out", had_snapshot=False),
+            "oracle": _feed(cfg),
+        }
     height = int(chain["blocks"])
     headers = int(chain.get("headers") or height)
     behind = max(0, headers - height)
-    header = btc.call("getblockheader", chain["bestblockhash"])
-    now = int(time.time())
+    header = _soft(btc, "getblockheader", chain["bestblockhash"], timeout=20) or {}
     block_age = max(0, now - int(header.get("time") or now))
     mem_bytes = int(mem.get("bytes") or 0)
     mem_tx = int(mem.get("size") or 0)
@@ -172,9 +236,9 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
     mempool_loaded = mem.get("loaded")
     if mempool_loaded is not None:
         mempool_loaded = bool(mempool_loaded)
-    peers = int(net.get("connections") or 0)
     ibd = bool(chain.get("initialblockdownload"))
     progress = float(chain.get("verificationprogress") or 0)
+    mining = _soft(btc, "getmininginfo", timeout=8) or {}
     health = health_flags(
         peers=peers,
         behind=behind,
@@ -183,6 +247,7 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
         progress=progress,
         mempool_loaded=mempool_loaded,
     )
+    busy = ibd or behind >= _BEHIND_WARN or mempool_loaded is False
     out = {
         "ok": True,
         "ts": now,
@@ -196,29 +261,24 @@ def snapshot(cfg: Config, btc: Bitcoin | None = None) -> dict:
             "progress": progress,
             "disk_gb": round(int(chain.get("size_on_disk") or 0) / 1e9, 1),
             "pruned": bool(chain.get("pruned")),
-            "difficulty": float(mining.get("difficulty") or 0),
+            "difficulty": float(mining.get("difficulty") or chain.get("difficulty") or 0),
             "nethash_eh": round(float(mining.get("networkhashps") or 0) / 1e18, 2),
             "block_time": int(header.get("time") or 0),
             "block_age_s": block_age,
             "next_halving_blocks": 210000 - (height % 210000),
         },
-        "net": {
-            "peers": peers,
-            "in": int(net.get("connections_in") or 0),
-            "out": int(net.get("connections_out") or 0),
-            "version": (net.get("subversion") or "").strip(),
-        },
+        "net": net_out,
         "mempool": {
             "tx": mem_tx,
             "mb": round(mem_bytes / 1e6, 2),
             "usage_mb": round(int(mem.get("usage") or 0) / 1e6, 1),
-            "fill": min(1.0, mem_bytes / mem_cap),
+            "fill": min(1.0, mem_bytes / mem_cap) if mem_cap else 0,
             "loaded": mempool_loaded,
             "min_sat_vb": Bitcoin.sat_vb(mem.get("mempoolminfee")),
-            "fee_fast": _fee(btc, 1),
-            "fee_mid": _fee(btc, 3),
-            "fee_slow": _fee(btc, 6),
-            "ingress": _ingress(btc),
+            "fee_fast": None if busy else _fee(btc, 1),
+            "fee_mid": None if busy else _fee(btc, 3),
+            "fee_slow": None if busy else _fee(btc, 6),
+            "ingress": [] if busy else _ingress(btc),
         },
         "oracle": _feed(cfg),
     }

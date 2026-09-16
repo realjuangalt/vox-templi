@@ -461,6 +461,7 @@ function syncLabel(c, health){
   const flags=(health && health.flags) || [];
   const codes=flags.map(f=>f.code);
   if(codes.indexOf('RPC_DOWN')>=0 || codes.indexOf('RPC_ERROR')>=0) return 'RPC DOWN';
+  if(codes.indexOf('RPC_SLOW')>=0) return 'RPC SLOW';
   if(codes.indexOf('NO_PEERS')>=0) return 'NO PEERS';
   if(ibd) return 'IBD '+(((c.progress||0)*100).toFixed(2))+'%';
   if(behind>=12) return 'BEHIND '+behind;

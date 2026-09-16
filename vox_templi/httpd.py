@@ -6,7 +6,7 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from .collect import health_from_error, snapshot, write_snapshot
+from .collect import health_from_error, merge_status, snapshot, write_snapshot
 from .config import Config
 from . import log
 
@@ -26,19 +26,35 @@ def _poller(cfg: Config) -> None:
     while True:
         try:
             data = snapshot(cfg)
-            write_snapshot(cfg, data)
             with _lock:
-                _status = data
+                prev = _status
+            if data.get("ok") and data.get("chain"):
+                write_snapshot(cfg, data)
+                with _lock:
+                    _status = data
+            else:
+                merged = merge_status(prev, data)
+                with _lock:
+                    _status = merged
+                log.emit(
+                    "snapshot",
+                    "partial",
+                    err=data.get("note"),
+                    peers=((data.get("net") or prev.get("net") or {}).get("peers")),
+                )
         except Exception as e:
             note = str(e)
+            with _lock:
+                prev = _status
             err = {
                 "ok": False,
                 "ts": int(time.time()),
                 "note": note,
-                "health": health_from_error(note),
+                "health": health_from_error(note, had_snapshot=bool(prev.get("chain"))),
             }
+            merged = merge_status(prev, err)
             with _lock:
-                _status = err
+                _status = merged
             print(f"[vox] poll error: {e}", flush=True)
             log.emit("snapshot", "error", err=note)
         time.sleep(cfg.poll_s)
