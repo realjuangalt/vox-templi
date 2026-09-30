@@ -73,13 +73,13 @@ def _feed(cfg: Config) -> dict:
             "n": len(pts),
             "computing": computing,
             "computing_date": hist.get("computing_date"),
-            "note": "on-chain daily history · beyond last 144 blocks",
+            "note": "UTXOracle Consensus Price · settled UTC day on this node",
         }
     live = dict(live)
     live["source"] = "last-144"
     live["computing"] = computing or bool(live.get("computing"))
     if live.get("usd"):
-        live["note"] = "last 144 blocks · daily history filling"
+        live["note"] = "UTXOracle Block Window Price · last 144 blocks"
     return live
 
 

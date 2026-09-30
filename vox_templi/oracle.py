@@ -131,6 +131,6 @@ def run(cfg: Config) -> dict:
         "lock": "STRONG" if usd else "NONE",
         "kind": kind,
         "computing": False,
-        "note": "on-chain implied USD (UTXOracle, this node)" if usd else "scan finished but no USD parsed",
+        "note": "UTXOracle Block Window Price" if usd else "scan finished but no USD parsed",
         "returncode": rc,
     })
