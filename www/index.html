@@ -72,7 +72,7 @@
     <div class="s">slow · mid · fast</div>
   </div>
   <div class="cell" id="s">
-    <div id="plock">UTXORACLE · NODE ONLY</div>
+    <div id="plock">UTXOracle · this node</div>
     <div id="price">$ —. —</div>
     <div class="s" id="oraerr"></div>
     <div class="s" id="flags"></div>
@@ -88,7 +88,7 @@
   <p><b>Space</b> — sound on/off. Kick and hats follow mempool load; pitch follows fees.</p>
   <p><b>Lightning</b> — a new mempool tx. Flies out of the oculus toward the edge (grows as it comes closer). Size = vbytes. Color = sat/vB (green cheap → orange expensive).</p>
   <p><b>Ring of light</b> — a block was found. The circle grows from the oculus to the edge of the screen.</p>
-  <p><b>Price</b> — UTXOracle on this node (daily history when available, else last 144 blocks). Glyphs scramble only while the first price is still computing.</p>
+  <p><b>Price</b> — UTXOracle on this node, from the UTXO set, with no exchange API. Settled days show the UTXOracle Consensus Price. Until that history exists, the figure is the UTXOracle Block Window Price (last 144 blocks). Glyphs scramble only while the first price is still computing.</p>
   <p><b>Health flags</b> — south panel warns on 0 peers, stale tip, blocks behind headers, IBD, mempool still loading, or RPC down.</p>
   <p><b>H</b> closes this panel.</p>
 </div>
@@ -510,14 +510,14 @@ function render(j){
   PriceScramble.set(o);
   if(o.usd){
     $('plock').textContent=(o.source==='daily-history')
-      ? ('ON-CHAIN DAILY · '+ (o.as_of_date||'') +' · BEYOND LAST 144')
-      : ('UTXORACLE · LAST 144 BLOCKS'+(o.computing?' · HISTORY FILLING':''));
+      ? ('UTXOracle Consensus Price · '+ (o.as_of_date||''))
+      : ('UTXOracle Block Window Price'+(o.computing?' · history filling':''));
     $('plock').className='ok';
     $('oraerr').textContent=o.computing ? ('computing '+ (o.computing_date||'')) : (o.note||'');
   } else {
     const st=(o.state||'warming').toUpperCase();
     const kind=o.kind ? ' · '+String(o.kind).toUpperCase() : '';
-    $('plock').textContent='UTXORACLE · '+st+kind;
+    $('plock').textContent='UTXOracle · '+st+kind;
     $('plock').className='warn';
     $('oraerr').textContent=o.note||'';
   }

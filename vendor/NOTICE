@@ -1,9 +1,20 @@
 UTXOracle.py
-  Source: https://utxo.live/oracle/UTXOracle.py
+  Project: UTXOracle
+  Author: Steve Jeffress (@SteveSimple)
+  Site: https://utxo.live/
+  Script: https://utxo.live/oracle/UTXOracle.py
   Version vendored: 9.1 (RPC only)
-  This tree does not call utxo.live at runtime. The script talks only to
-  your bitcoind via JSON-RPC.
+  License: vendor/UTXORACLE_LICENSE.md
+           (upstream text, https://utxo.live/oracle/license.php)
 
-  No license file ships with the upstream script. We vendor it for
-  local, offline use and parse its `central_price` result. If you
-  redistribute, check the author's terms on utxo.live.
+  This tree does not modify UTXOracle's price filtering or averaging.
+  It does not call utxo.live at runtime. The script talks only to
+  the local bitcoind via JSON-RPC.
+
+  On-screen names, when this script is unchanged:
+    UTXOracle Block Window Price   last 144 confirmed blocks
+    UTXOracle Consensus Price      one settled UTC day
+
+  Read the upstream license before redistributing the script or
+  using the price in a commercial product. Local consensus-compatible
+  use is what this project is built for.

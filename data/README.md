@@ -1,6 +1,6 @@
 # UTXOracle daily prices
 
-`utxoracle-daily.json` holds an optional **bundled seed** of daily USD integers from vendored `UTXOracle.py` 9.1 on settled blocks. Same UTC day ⇒ same integer on every node that runs the same script.
+`utxoracle-daily.json` holds an optional **bundled seed** of daily USD integers from vendored `UTXOracle.py` 9.1 on settled blocks. Those integers are the **UTXOracle Consensus Price** (Steve Jeffress, [utxo.live](https://utxo.live/)). Same UTC day ⇒ same integer on every node that runs the same script.
 
 The file in this repo may ship with an empty `points` array (schema stub). Each node builds or extends the series locally.
 
