@@ -70,7 +70,7 @@ The USD figure comes from UTXOracle on this node.
 
 Use those names on screen and in docs when the vendored script’s price logic is unchanged. Link [utxo.live](https://utxo.live/) and name Steve Jeffress (@SteveSimple).
 
-Do not add CoinGecko, Kraken, mempool.space, or any other exchange or price HTTP API. Do not point the oracle at mempool transactions. Do not edit the filtering or averaging inside `vendor/UTXOracle.py`. Adapting RPC paths in `vox_templi/oracle.py` is fine. Changing UTXOracle’s price math means you must stop calling the result a UTXOracle price (see `vendor/UTXORACLE_LICENSE.md`).
+Do not add CoinGecko, Kraken, mempool.space, or any other exchange or price HTTP API to the node appliance. The static site in `pages/` is the only place that calls mempool.space. Leave that split alone. Do not point the oracle at mempool transactions. Do not edit the filtering or averaging inside `vendor/UTXOracle.py`. Adapting RPC paths in `vox_templi/oracle.py` is fine. Changing UTXOracle’s price math means you must stop calling the result a UTXOracle price (see `vendor/UTXORACLE_LICENSE.md`).
 
 The number on the wall is a cached result. The page refreshes every 8 seconds so height, fees, and health stay current. The price itself moves when the oracle or history job writes, not on every poll.
 

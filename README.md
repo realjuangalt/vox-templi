@@ -12,6 +12,14 @@ If something looks wrong with the node, the south wall says so in words: no peer
 
 Open it in a browser at `http://127.0.0.1:8090/`, or let the HDMI kiosk take tty1.
 
+## Public page
+
+[`pages/index.html`](pages/index.html) is the same oculus, built as one static file for GitHub Pages. It does not talk to your node. Mempool size, new transactions, blocks, and fees come from the public [mempool.space](https://mempool.space/) API. The USD figure on that page is mempool.space’s published price. UTXOracle stays on the appliance, because a static page cannot read your UTXO set.
+
+The public page still says when something looks wrong: the feed is down, the live socket dropped, the tip is old, the mempool is heavy, or fees are unusually high. Those flags describe the public network and the data source. They do not describe your node.
+
+After this is on `main`, turn on Pages (Settings → Pages → Source: GitHub Actions). [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publishes the `pages/` folder. The site will be at `https://realjuangalt.github.io/vox-templi/`.
+
 ```
 bitcoind JSON-RPC  →  python -m vox_templi serve  →  cage + Chromium (tty1)
                               ↑
